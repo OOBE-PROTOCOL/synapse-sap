@@ -22,7 +22,7 @@ import { BN } from "bn.js";
 // ═══════════════════════════════════════════════════════════════════
 
 export const PROGRAM_ID = new PublicKey(
-  "SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL"
+  "SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ"
 );
 
 /** Convenience: all seeds used by the program */

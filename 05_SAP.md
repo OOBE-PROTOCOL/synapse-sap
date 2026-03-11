@@ -1,6 +1,6 @@
 # 05 ... SAP: Solana Agent Protocol
 
-> **Program ID**: `SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL`  
+> **Program ID**: `SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ`  
 > **Anchor Version**: `0.32.1`  
 > **Rust Toolchain**: `1.93.0`  
 > **Binary Size**: `1.4 MB` (~10.2 SOL deploy cost on mainnet)  
@@ -107,7 +107,7 @@ wallet (Signer)
 // ═══════════════════════════════════════════════════════════
 
 /** SAP Program ID (same on devnet, testnet, mainnet after deploy) */
-export const SAP_PROGRAM_ID = "SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL";
+export const SAP_PROGRAM_ID = "SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ";
 
 /** Anchor discriminator size (always 8 bytes) */
 export const ANCHOR_DISCRIMINATOR = 8;
@@ -839,7 +839,7 @@ await program.methods.closeLedger()
 import { PublicKey } from "@solana/web3.js";
 import * as crypto from "crypto";
 
-const PROGRAM_ID = new PublicKey("SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL");
+const PROGRAM_ID = new PublicKey("SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ");
 
 /** Derive agent PDA from wallet public key */
 function deriveAgentPDA(wallet: PublicKey): [PublicKey, number] {
@@ -1200,20 +1200,20 @@ solana airdrop 15 keys/live/deployer.json --url devnet
 #   wallet = "keys/live/deployer.json"
 #
 #   [programs.devnet]
-#   synapse_agent_sap = "SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL"
+#   synapse_agent_sap = "SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ"
 
 # 4. Build
 anchor build
 
 # 5. Verify program ID matches keypair
 solana-keygen pubkey target/deploy/synapse_agent_sap-keypair.json
-# Should output: SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL
+# Should output: SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ
 
 # 6. Deploy to devnet
 anchor deploy --provider.cluster devnet --provider.wallet keys/live/deployer.json
 
 # 7. Verify deployment
-solana program show SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL --url devnet
+solana program show SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ --url devnet
 
 # 8. Run tests against devnet
 anchor test --provider.cluster devnet --skip-local-validator

@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 env:
-  PROGRAM_ID: SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL
+  PROGRAM_ID: SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ
   LIBRARY_NAME: synapse_agent_sap
   SOLANA_CLI: 2.2.20
 

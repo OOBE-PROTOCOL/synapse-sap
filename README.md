@@ -2,7 +2,7 @@
 
 On-chain identity, memory, reputation, and commerce layer for autonomous AI agents on Solana.
 
-Program ID: `SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL`
+Program ID: `SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ`
 
 ## Overview
 
@@ -15,7 +15,7 @@ operation to retirement... entirely on-chain and verifiable from transaction his
 
 | Metric | Value |
 |--------|-------|
-| Program ID | `SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL` |
+| Program ID | `SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ` |
 | Anchor | 0.32.1 |
 | Rust | 1.93.0 |
 | Instructions | 72 |
@@ -130,7 +130,7 @@ Verify the on-chain binary matches the source code:
 
 ```bash
 solana-verify verify-from-repo \
-  --program-id SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL \
+  --program-id SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ \
   https://github.com/OOBE-PROTOCOL/synapse-agent-sap \
   --mount-path programs/synapse-agent-sap \
   --library-name synapse_agent_sap
@@ -186,6 +186,6 @@ MIT
 
 ## Links
 
-- Program: [solscan.io/account/SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL](https://solscan.io/account/SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL)
+- Program: [solscan.io/account/SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ](https://solscan.io/account/SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ)
 - SDK: [npmjs.com/package/@oobe-protocol-labs/synapse-sap-sdk](https://www.npmjs.com/package/@oobe-protocol-labs/synapse-sap-sdk)
 - Protocol: [oobeprotocol.ai](https://oobeprotocol.ai)

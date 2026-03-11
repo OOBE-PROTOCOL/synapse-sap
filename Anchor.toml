@@ -6,13 +6,13 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-synapse_agent_sap = "SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL"
+synapse_agent_sap = "SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ"
 
 [programs.devnet]
-synapse_agent_sap = "SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL"
+synapse_agent_sap = "SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ"
 
 [programs.mainnet]
-synapse_agent_sap = "SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL"
+synapse_agent_sap = "SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ"
 
 [registry]
 url = "https://api.apr.dev"
