@@ -26,6 +26,8 @@ anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
 solana-sha256-hasher = "2.3"
 solana-security-txt = "1.1.1"
 
+[dev-dependencies]
+solana-program = "=2.2.1"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))', 'cfg(feature, values("legacy-memory"))'] }
