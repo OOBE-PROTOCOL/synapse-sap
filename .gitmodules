@@ -1,0 +1,3 @@
+[submodule "synapse-sap-sdk"]
+	path = synapse-sap-sdk
+	url = https://github.com/OOBE-PROTOCOL/synapse-sap-sdk.git

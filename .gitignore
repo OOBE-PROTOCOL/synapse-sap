@@ -1,0 +1,16 @@
+.anchor
+.DS_Store
+target
+**/*.rs.bk
+node_modules
+test-ledger
+.yarn
+.history
+*.code-workspace
+
+# Keypairs
+keys/live/
+keys
+keys/test/
+keys/devnet-agents/
+*.json.bak
