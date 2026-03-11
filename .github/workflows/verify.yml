@@ -1,0 +1,72 @@
+name: Verify Program
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "programs/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+
+env:
+  PROGRAM_ID: SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL
+  LIBRARY_NAME: synapse_agent_sap
+  SOLANA_CLI: 2.2.20
+
+jobs:
+  verify:
+    name: Build & Verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_CLI }}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Install solana-verify
+        run: |
+          cargo install solana-verify --git https://github.com/otter-sec/solana-verifiable-build.git --branch feat/workspace-metadata-first
+
+      - name: Build verifiable binary
+        run: |
+          solana-verify build \
+            --library-name ${{ env.LIBRARY_NAME }} \
+            --base-image solanafoundation/solana-verifiable-build:${{ env.SOLANA_CLI }}
+
+      - name: Get executable hash
+        id: local_hash
+        run: |
+          HASH=$(solana-verify get-executable-hash target/deploy/${{ env.LIBRARY_NAME }}.so)
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Local build hash: $HASH"
+
+      - name: Get on-chain hash
+        id: onchain_hash
+        run: |
+          HASH=$(solana-verify get-program-hash ${{ env.PROGRAM_ID }} -u https://api.mainnet-beta.solana.com)
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          echo "On-chain hash: $HASH"
+
+      - name: Compare hashes
+        run: |
+          echo "Local:    ${{ steps.local_hash.outputs.hash }}"
+          echo "On-chain: ${{ steps.onchain_hash.outputs.hash }}"
+          if [ "${{ steps.local_hash.outputs.hash }}" = "${{ steps.onchain_hash.outputs.hash }}" ]; then
+            echo "VERIFIED: Program hashes match"
+          else
+            echo "MISMATCH: Hashes do not match"
+            echo "If this is the first run after deployment, download the artifact and redeploy"
+            exit 1
+          fi
+
+      - name: Upload build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-binary
+          path: target/deploy/${{ env.LIBRARY_NAME }}.so
+          retention-days: 90
