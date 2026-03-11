@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `security.txt` embedded in the program binary per OWASP Solana guidelines.
 - Legacy memory systems gated behind `legacy-memory` feature flag.
 - 187 integration tests across 10 suites.
-- Deployed to mainnet-beta and devnet at `SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL`.
+- Deployed to mainnet-beta and devnet at `SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ`.
 - IDL uploaded on-chain at `7m5Zdb3whpZbFDHSbKBEytApWSJuDmykhbyfsD8StBVe`.
 - TypeScript SDK published as `@oobe-protocol-labs/synapse-sap-sdk` on npm.
 

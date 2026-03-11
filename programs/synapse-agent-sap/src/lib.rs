@@ -11,7 +11,7 @@ pub mod validator;
 use instructions::*;
 use state::*;
 
-declare_id!("SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL");
+declare_id!("SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ");
 
 #[cfg(not(feature = "no-entrypoint"))]
 security_txt! {

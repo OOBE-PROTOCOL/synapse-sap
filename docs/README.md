@@ -15,7 +15,7 @@ retirement... is auditable from transaction history alone.
 
 | Metric | Value |
 |:-------|:------|
-| **Program ID** | `SAPTU7aUXk2AaAdktexae1iuxXpokxzNDBAYYhaVyQL` |
+| **Program ID** | `SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ` |
 | **Anchor** | 0.32.1 |
 | **Rust** | 1.93.0 |
 | **Instructions** | 72 |
