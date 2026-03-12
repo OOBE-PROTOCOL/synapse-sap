@@ -167,6 +167,66 @@ SEEDS.TOOL_CATEGORY      // "sap_tool_cat"
 SEEDS.ATTESTATION        // "sap_attest"
 SEEDS.LEDGER             // "sap_ledger"
 SEEDS.LEDGER_PAGE        // "sap_page"
+SEEDS.BUFFER             // "sap_buffer"
+SEEDS.DIGEST             // "sap_digest"
+```
+
+---
+
+## Mainnet Addresses
+
+Pre-computed addresses for all singleton and well-known PDAs on **mainnet-beta**.  
+Dynamic PDAs (per-agent, per-session, etc.) are derived at runtime using the seeds above.
+
+### Program & Authority
+
+| Name | Address | Notes |
+|:-----|:--------|:------|
+| **SAP v2 Program** | `SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ` | Verified via OtterSec ([Solscan](https://solscan.io/account/SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ)) |
+| **Upgrade Authority** | `GBLQznn1QMnx64zHXcDguP9yNW9ZfYCVdrY8eDovBvPk` | Protocol multisig |
+| **IDL Account** | `ENs7L1NFuoP7dur8cqGGE6b98CQHfNeDZPWPSjRzhc4f` | `program-metadata` format, seeds: `["idl", program_id]` |
+| **program-metadata Program** | `pmetaypqG6SiB47xMigYVMAkuHDWeSDXcv3zzDrJJvA` | Solana Foundation standard |
+
+### Singleton PDAs
+
+| Account | Address | Seeds | Bump |
+|:--------|:--------|:------|:----:|
+| **GlobalRegistry** | `9odFrYBBZq6UQC6aGyzMPNXWJQn55kMtfigzhLg6S6L5` | `["sap_global"]` | 255 |
+
+### Tool Category Index PDAs
+
+Each `ToolCategory` enum variant maps to a deterministic PDA. Seeds: `["sap_tool_cat", category_u8]`
+
+| # | Category | Address | Bump |
+|:--|:---------|:--------|:----:|
+| 0 | Swap | `5H8yn9RuRgZWqkDiWbKNaCHzTMjqSpwbNQKMPLtUXx2G` | 252 |
+| 1 | Lend | `5Lqqk6VtFWnYq3h4Ae4FuUAKnFzw1Nm1DaSdt2cjcTDj` | 254 |
+| 2 | Stake | `kC8oAiVUcFMXEnmMNu1h2sdAc3dWKcwV5qVKRFYMmQD` | 255 |
+| 3 | Nft | `2zNWR9J3znvGQ5J6xDfJyZkd12Gi66mjErRDkgPeKbyF` | 248 |
+| 4 | Payment | `Eh7MwxJYWRN8bzAmY3ZPTRXYjWpWypokBf1STixu2dy9` | 255 |
+| 5 | Data | `AwpVxehQUZCVTAJ9icZfS6oRbF66jNo32duXaL11B5df` | 252 |
+| 6 | Governance | `2573WjZzV9QtbqtM6Z86YGivkk1kdvJa4gK3tZRQ2jkN` | 254 |
+| 7 | Bridge | `664nyr6kBeeFiE1ij5gtdncNCVHrXqrk2uBhnKmUREvK` | 255 |
+| 8 | Analytics | `4DFsiTZ6h6RoCZuUeMTpaoQguepnPUMJBLJuwwjKg5GL` | 255 |
+| 9 | Custom | `3Nk5dvFWEyWPEArdG9cCdab6C6ym36mSWUSB8HzN35ZM` | 248 |
+
+### SDK Access
+
+```typescript
+import {
+  SAP_PROGRAM,
+  SAP_UPGRADE_AUTHORITY,
+  GLOBAL_REGISTRY_ADDRESS,
+  IDL_ACCOUNT_ADDRESS,
+  TOOL_CATEGORY_ADDRESSES,
+} from "@oobe-protocol-labs/synapse-sap-sdk";
+
+// Direct PublicKey access
+console.log(GLOBAL_REGISTRY_ADDRESS.toBase58());
+//=> "9odFrYBBZq6UQC6aGyzMPNXWJQn55kMtfigzhLg6S6L5"
+
+console.log(TOOL_CATEGORY_ADDRESSES.Swap.toBase58());
+//=> "5H8yn9RuRgZWqkDiWbKNaCHzTMjqSpwbNQKMPLtUXx2G"
 ```
 
 ---
