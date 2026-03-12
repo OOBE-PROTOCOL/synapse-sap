@@ -16,6 +16,10 @@ retirement... is auditable from transaction history alone.
 | Metric | Value |
 |:-------|:------|
 | **Program ID** | `SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ` |
+| **Upgrade Authority** | `GBLQznn1QMnx64zHXcDguP9yNW9ZfYCVdrY8eDovBvPk` |
+| **Global Registry PDA** | `9odFrYBBZq6UQC6aGyzMPNXWJQn55kMtfigzhLg6S6L5` |
+| **IDL Account** | `ENs7L1NFuoP7dur8cqGGE6b98CQHfNeDZPWPSjRzhc4f` |
+| **Verification** | OtterSec verified ✓ |
 | **Anchor** | 0.32.1 |
 | **Rust** | 1.93.0 |
 | **Instructions** | 72 |

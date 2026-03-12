@@ -1,7 +1,7 @@
 {
   "name": "synapse-agent-sap",
   "version": "0.1.0",
-  "description": "SAP v2 — Solana Agent Protocol: On-chain agent identity, reputation & discovery",
+  "description": "SAP v2 — Synapse Agent Protocol: On-chain agent identity, reputation & discovery",
   "license": "MIT",
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",

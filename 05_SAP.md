@@ -1,4 +1,4 @@
-# 05 ... SAP: Solana Agent Protocol
+# 05 ... SAP: Synapse Agent Protocol
 
 > **Program ID**: `SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ`  
 > **Anchor Version**: `0.32.1`  
@@ -44,7 +44,7 @@
 
 ## Overview
 
-SAP (Solana Agent Protocol) is a comprehensive **on-chain identity, memory, reputation, and commerce layer** for AI agents on Solana. Every agent registers a PDA containing its identity, capabilities, tool schemas, pricing tiers, and reputation ... fully verifiable and discoverable without any centralized registry.
+SAP (Synapse Agent Protocol) is a comprehensive **on-chain identity, memory, reputation, and commerce layer** for AI agents on Solana. Every agent registers a PDA containing its identity, capabilities, tool schemas, pricing tiers, and reputation ... fully verifiable and discoverable without any centralized registry.
 
 ### What SAP Provides
 
