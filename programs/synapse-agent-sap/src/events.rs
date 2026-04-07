@@ -400,6 +400,17 @@ pub struct BatchSettledEvent {
     pub timestamp: i64,
 }
 
+/// Escrow closed. Rent returned to depositor. Balance was already 0.
+#[event]
+pub struct EscrowClosedEvent {
+    pub escrow: Pubkey,
+    pub agent: Pubkey,
+    pub depositor: Pubkey,
+    pub total_settled: u64,
+    pub total_calls_settled: u64,
+    pub timestamp: i64,
+}
+
 // ═══════════════════════════════════════════════
 //  Attestation Events (Web of Trust)
 // ═══════════════════════════════════════════════
@@ -521,5 +532,218 @@ pub struct LedgerSealedEvent {
     pub entries_in_page: u32,
     pub data_size: u32,
     pub merkle_root_at_seal: [u8; 32],
+    pub timestamp: i64,
+}
+
+// ═══════════════════════════════════════════════
+//  v2.1: Escrow V2 Events (Multi-Mode Settlement)
+// ═══════════════════════════════════════════════
+
+/// EscrowV2 created with settlement security mode.
+#[event]
+pub struct EscrowV2CreatedEvent {
+    pub escrow: Pubkey,
+    pub agent: Pubkey,
+    pub depositor: Pubkey,
+    pub escrow_nonce: u64,
+    pub price_per_call: u64,
+    pub max_calls: u64,
+    pub initial_deposit: u64,
+    pub settlement_security: u8,  // 0=SelfReport, 1=CoSigned, 2=DisputeWindow
+    pub dispute_window_slots: u64,
+    pub co_signer: Option<Pubkey>,
+    pub arbiter: Option<Pubkey>,
+    pub timestamp: i64,
+}
+
+/// Settlement entered pending state (DisputeWindow mode).
+#[event]
+pub struct SettlementPendingEvent {
+    pub pending_settlement: Pubkey,
+    pub escrow: Pubkey,
+    pub agent: Pubkey,
+    pub depositor: Pubkey,
+    pub settlement_index: u64,
+    pub calls_to_settle: u64,
+    pub amount: u64,
+    pub service_hash: [u8; 32],
+    pub release_slot: u64,
+    pub timestamp: i64,
+}
+
+/// Co-signed settlement executed immediately (CoSigned mode).
+#[event]
+pub struct CoSignedSettlementEvent {
+    pub escrow: Pubkey,
+    pub agent: Pubkey,
+    pub depositor: Pubkey,
+    pub co_signer: Pubkey,
+    pub calls_settled: u64,
+    pub amount: u64,
+    pub service_hash: [u8; 32],
+    pub timestamp: i64,
+}
+
+/// Pending settlement finalized (auto-released after dispute window).
+#[event]
+pub struct SettlementFinalizedEvent {
+    pub pending_settlement: Pubkey,
+    pub escrow: Pubkey,
+    pub agent: Pubkey,
+    pub amount: u64,
+    pub calls_settled: u64,
+    pub timestamp: i64,
+}
+
+// ═══════════════════════════════════════════════
+//  v2.1: Dispute Events
+// ═══════════════════════════════════════════════
+
+/// Dispute filed by depositor.
+#[event]
+pub struct DisputeFiledEvent {
+    pub dispute: Pubkey,
+    pub pending_settlement: Pubkey,
+    pub escrow: Pubkey,
+    pub depositor: Pubkey,
+    pub agent: Pubkey,
+    pub evidence_hash: [u8; 32],
+    pub arbiter: Pubkey,
+    pub timestamp: i64,
+}
+
+/// Dispute resolved by arbiter.
+#[event]
+pub struct DisputeResolvedEvent {
+    pub dispute: Pubkey,
+    pub pending_settlement: Pubkey,
+    pub escrow: Pubkey,
+    pub outcome: u8,              // 1=DepositorWins, 2=AgentWins
+    pub slash_amount: u64,
+    pub resolution_hash: [u8; 32],
+    pub timestamp: i64,
+}
+
+// ═══════════════════════════════════════════════
+//  v2.1: Staking Events
+// ═══════════════════════════════════════════════
+
+/// Agent staked collateral.
+#[event]
+pub struct StakeDepositedEvent {
+    pub agent: Pubkey,
+    pub wallet: Pubkey,
+    pub amount: u64,
+    pub total_staked: u64,
+    pub timestamp: i64,
+}
+
+/// Unstake requested (starts cooldown).
+#[event]
+pub struct UnstakeRequestedEvent {
+    pub agent: Pubkey,
+    pub wallet: Pubkey,
+    pub amount: u64,
+    pub available_at: i64,
+    pub timestamp: i64,
+}
+
+/// Unstake completed after cooldown.
+#[event]
+pub struct UnstakeCompletedEvent {
+    pub agent: Pubkey,
+    pub wallet: Pubkey,
+    pub amount: u64,
+    pub remaining_staked: u64,
+    pub timestamp: i64,
+}
+
+/// Stake slashed due to lost dispute.
+#[event]
+pub struct StakeSlashedEvent {
+    pub agent: Pubkey,
+    pub dispute: Pubkey,
+    pub slash_amount: u64,
+    pub remaining_staked: u64,
+    pub compensated_to: Pubkey,
+    pub timestamp: i64,
+}
+
+// ═══════════════════════════════════════════════
+//  v2.1: Subscription Events
+// ═══════════════════════════════════════════════
+
+/// New subscription created and funded.
+#[event]
+pub struct SubscriptionCreatedEvent {
+    pub subscription: Pubkey,
+    pub agent: Pubkey,
+    pub subscriber: Pubkey,
+    pub sub_id: u64,
+    pub price_per_interval: u64,
+    pub billing_interval: u8,     // 0=Daily, 1=Weekly, 2=Monthly
+    pub initial_deposit: u64,
+    pub timestamp: i64,
+}
+
+/// Subscription interval claimed by agent.
+#[event]
+pub struct SubscriptionClaimedEvent {
+    pub subscription: Pubkey,
+    pub agent: Pubkey,
+    pub subscriber: Pubkey,
+    pub amount: u64,
+    pub intervals_paid: u32,
+    pub remaining_balance: u64,
+    pub timestamp: i64,
+}
+
+/// Subscription cancelled (pro-rata refund available).
+#[event]
+pub struct SubscriptionCancelledEvent {
+    pub subscription: Pubkey,
+    pub agent: Pubkey,
+    pub subscriber: Pubkey,
+    pub refund_amount: u64,
+    pub intervals_used: u32,
+    pub timestamp: i64,
+}
+
+// ═══════════════════════════════════════════════
+//  v2.1: Counter Shard Events
+// ═══════════════════════════════════════════════
+
+/// Counter shard initialized.
+#[event]
+pub struct ShardInitializedEvent {
+    pub shard: Pubkey,
+    pub shard_index: u8,
+    pub timestamp: i64,
+}
+
+// ═══════════════════════════════════════════════
+//  v2.1: Index Pagination Events
+// ═══════════════════════════════════════════════
+
+/// Overflow index page created.
+#[event]
+pub struct IndexPageCreatedEvent {
+    pub parent_index: Pubkey,
+    pub index_page: Pubkey,
+    pub page_index: u8,
+    pub timestamp: i64,
+}
+
+// ═══════════════════════════════════════════════
+//  v2.1: Migration Events
+// ═══════════════════════════════════════════════
+
+/// Account migrated to v2 layout.
+#[event]
+pub struct AccountMigratedEvent {
+    pub account: Pubkey,
+    pub account_type: String,
+    pub from_version: u8,
+    pub to_version: u8,
     pub timestamp: i64,
 }

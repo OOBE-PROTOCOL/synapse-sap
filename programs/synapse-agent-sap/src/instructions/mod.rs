@@ -8,6 +8,15 @@ pub mod escrow;
 pub mod attestation;
 pub mod ledger;
 
+// ── V2.1 Modules ────────────────────────────────────────────────
+pub mod escrow_v2;
+pub mod dispute;
+pub mod staking;
+pub mod subscription;
+pub mod shards;
+pub mod index_page;
+pub mod migration;
+
 // Legacy modules — gated behind the "legacy-memory" feature.
 // Code is preserved, excluded from default binary to reduce deploy cost.
 // Enable with: anchor build -- --features legacy-memory
@@ -31,6 +40,15 @@ pub use tools::*;
 pub use escrow::*;
 pub use attestation::*;
 pub use ledger::*;
+
+// ── V2.1 Re-exports ────────────────────────────────────────────
+pub use escrow_v2::*;
+pub use dispute::*;
+pub use staking::*;
+pub use subscription::*;
+pub use shards::*;
+pub use index_page::*;
+pub use migration::*;
 
 #[cfg(feature = "legacy-memory")]
 pub use plugin::*;

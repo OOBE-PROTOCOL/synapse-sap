@@ -815,4 +815,267 @@ pub mod synapse_agent_sap {
     pub fn close_ledger(ctx: Context<CloseLedgerAccountConstraints>) -> Result<()> {
         instructions::ledger::close_ledger_handler(ctx)
     }
+
+    // ═══════════════════════════════════════════════
+    //  x402 Escrow V2 — Triple-Mode Settlement
+    //
+    //  Multi-escrow with nonce, three settlement security
+    //  modes: SelfReport, CoSigned, DisputeWindow.
+    //  Supersedes v1 escrow for new integrations.
+    // ═══════════════════════════════════════════════
+
+    /// Create V2 escrow with settlement security mode.
+    pub fn create_escrow_v2<'info>(
+        ctx: Context<'_, '_, 'info, 'info, CreateEscrowV2AccountConstraints<'info>>,
+        escrow_nonce: u64,
+        price_per_call: u64,
+        max_calls: u64,
+        initial_deposit: u64,
+        expires_at: i64,
+        volume_curve: Vec<VolumeCurveBreakpoint>,
+        token_mint: Option<Pubkey>,
+        token_decimals: u8,
+        settlement_security: u8,
+        dispute_window_slots: u64,
+        co_signer: Option<Pubkey>,
+        arbiter: Option<Pubkey>,
+    ) -> Result<()> {
+        instructions::escrow_v2::create_escrow_v2_handler(
+            ctx, escrow_nonce, price_per_call, max_calls, initial_deposit,
+            expires_at, volume_curve, token_mint, token_decimals,
+            settlement_security, dispute_window_slots, co_signer, arbiter,
+        )
+    }
+
+    /// Deposit into V2 escrow.
+    pub fn deposit_escrow_v2<'info>(
+        ctx: Context<'_, '_, 'info, 'info, DepositEscrowV2AccountConstraints<'info>>,
+        escrow_nonce: u64,
+        amount: u64,
+    ) -> Result<()> {
+        instructions::escrow_v2::deposit_escrow_v2_handler(ctx, escrow_nonce, amount)
+    }
+
+    /// Agent settles calls via V2 escrow. Mode-dispatched.
+    pub fn settle_calls_v2<'info>(
+        ctx: Context<'_, '_, 'info, 'info, SettleCallsV2AccountConstraints<'info>>,
+        escrow_nonce: u64,
+        calls_to_settle: u64,
+        service_hash: [u8; 32],
+    ) -> Result<()> {
+        instructions::escrow_v2::settle_calls_v2_handler(ctx, escrow_nonce, calls_to_settle, service_hash)
+    }
+
+    /// Create PendingSettlement PDA (DisputeWindow mode).
+    pub fn create_pending_settlement(
+        ctx: Context<CreatePendingSettlementAccountConstraints>,
+        settlement_index: u64,
+        calls_to_settle: u64,
+        amount: u64,
+        service_hash: [u8; 32],
+    ) -> Result<()> {
+        instructions::escrow_v2::create_pending_settlement_handler(ctx, settlement_index, calls_to_settle, amount, service_hash)
+    }
+
+    /// Finalize settlement after dispute window. Permissionless crank.
+    pub fn finalize_settlement<'info>(
+        ctx: Context<'_, '_, 'info, 'info, FinalizeSettlementAccountConstraints<'info>>,
+    ) -> Result<()> {
+        instructions::escrow_v2::finalize_settlement_handler(ctx)
+    }
+
+    /// Withdraw from V2 escrow (available balance only).
+    pub fn withdraw_escrow_v2<'info>(
+        ctx: Context<'_, '_, 'info, 'info, WithdrawEscrowV2AccountConstraints<'info>>,
+        amount: u64,
+    ) -> Result<()> {
+        instructions::escrow_v2::withdraw_escrow_v2_handler(ctx, amount)
+    }
+
+    /// Close empty V2 escrow. No pending settlements allowed.
+    pub fn close_escrow_v2(ctx: Context<CloseEscrowV2AccountConstraints>) -> Result<()> {
+        instructions::escrow_v2::close_escrow_v2_handler(ctx)
+    }
+
+    // ═══════════════════════════════════════════════
+    //  Dispute Resolution
+    //
+    //  On-chain arbiter-mediated dispute system.
+    //  Depositor files dispute → arbiter resolves →
+    //  funds released or refunded + optional slash.
+    // ═══════════════════════════════════════════════
+
+    /// Depositor files dispute on a pending settlement.
+    pub fn file_dispute(
+        ctx: Context<FileDisputeAccountConstraints>,
+        evidence_hash: [u8; 32],
+    ) -> Result<()> {
+        instructions::dispute::file_dispute_handler(ctx, evidence_hash)
+    }
+
+    /// Agent submits counter-evidence for a dispute.
+    pub fn submit_agent_evidence(
+        ctx: Context<SubmitAgentEvidenceAccountConstraints>,
+        evidence_hash: [u8; 32],
+    ) -> Result<()> {
+        instructions::dispute::submit_agent_evidence_handler(ctx, evidence_hash)
+    }
+
+    /// Arbiter resolves dispute. outcome: 2=DepositorWins, 3=AgentWins.
+    pub fn resolve_dispute<'info>(
+        ctx: Context<'_, '_, 'info, 'info, ResolveDisputeAccountConstraints<'info>>,
+        outcome: u8,
+    ) -> Result<()> {
+        instructions::dispute::resolve_dispute_handler(ctx, outcome)
+    }
+
+    /// Close finalized dispute PDA. Depositor reclaims rent.
+    pub fn close_dispute(ctx: Context<CloseDisputeAccountConstraints>) -> Result<()> {
+        instructions::dispute::close_dispute_handler(ctx)
+    }
+
+    /// Close finalized pending settlement PDA. Reclaim rent.
+    pub fn close_pending_settlement(ctx: Context<ClosePendingSettlementAccountConstraints>) -> Result<()> {
+        instructions::dispute::close_pending_settlement_handler(ctx)
+    }
+
+    // ═══════════════════════════════════════════════
+    //  Agent Staking — Collateralized Trust
+    //
+    //  Agents deposit SOL collateral.  Stake can be
+    //  slashed during dispute resolution as penalty.
+    //  7-day cooldown on unstaking for safety.
+    // ═══════════════════════════════════════════════
+
+    /// Init agent stake PDA with initial deposit.
+    pub fn init_stake(
+        ctx: Context<InitStakeAccountConstraints>,
+        initial_deposit: u64,
+    ) -> Result<()> {
+        instructions::staking::init_stake_handler(ctx, initial_deposit)
+    }
+
+    /// Deposit more SOL into agent stake.
+    pub fn deposit_stake(
+        ctx: Context<DepositStakeAccountConstraints>,
+        amount: u64,
+    ) -> Result<()> {
+        instructions::staking::deposit_stake_handler(ctx, amount)
+    }
+
+    /// Request unstake — starts 7-day cooldown. Supports partial unstake.
+    pub fn request_unstake(ctx: Context<RequestUnstakeAccountConstraints>, amount: u64) -> Result<()> {
+        instructions::staking::request_unstake_handler(ctx, amount)
+    }
+
+    /// Complete unstake after cooldown period.
+    pub fn complete_unstake(ctx: Context<CompleteUnstakeAccountConstraints>) -> Result<()> {
+        instructions::staking::complete_unstake_handler(ctx)
+    }
+
+    // ═══════════════════════════════════════════════
+    //  Subscriptions — Recurring Payment Channels
+    //
+    //  Depositor subscribes to agent with fixed
+    //  interval pricing.  Agent claims completed
+    //  intervals.  Pro-rata refund on cancellation.
+    // ═══════════════════════════════════════════════
+
+    /// Create subscription to agent.
+    pub fn create_subscription(
+        ctx: Context<CreateSubscriptionAccountConstraints>,
+        sub_id: u64,
+        price_per_interval: u64,
+        billing_interval: u8,
+        initial_deposit: u64,
+    ) -> Result<()> {
+        instructions::subscription::create_subscription_handler(ctx, sub_id, price_per_interval, billing_interval, initial_deposit)
+    }
+
+    /// Fund subscription with additional SOL.
+    pub fn fund_subscription(
+        ctx: Context<FundSubscriptionAccountConstraints>,
+        amount: u64,
+    ) -> Result<()> {
+        instructions::subscription::fund_subscription_handler(ctx, amount)
+    }
+
+    /// Permissionless crank: claim completed billing intervals.
+    pub fn claim_interval(ctx: Context<ClaimIntervalAccountConstraints>) -> Result<()> {
+        instructions::subscription::claim_interval_handler(ctx)
+    }
+
+    /// Depositor cancels subscription. Remaining balance refunded.
+    pub fn cancel_subscription(ctx: Context<CancelSubscriptionAccountConstraints>) -> Result<()> {
+        instructions::subscription::cancel_subscription_handler(ctx)
+    }
+
+    /// Close cancelled subscription PDA. Reclaim rent.
+    pub fn close_subscription(ctx: Context<CloseSubscriptionAccountConstraints>) -> Result<()> {
+        instructions::subscription::close_subscription_handler(ctx)
+    }
+
+    // ═══════════════════════════════════════════════
+    //  Counter Shards — Parallel Write Throughput
+    //
+    //  8 shards per counter for 8× throughput.
+    //  Used by GlobalRegistry and discovery indexes.
+    // ═══════════════════════════════════════════════
+
+    /// Init counter shard for a parent account.
+    pub fn init_shard(
+        ctx: Context<InitShardAccountConstraints>,
+        shard_index: u8,
+    ) -> Result<()> {
+        instructions::shards::init_shard_handler(ctx, shard_index)
+    }
+
+    // ═══════════════════════════════════════════════
+    //  Index Pages — Overflow Discovery Indexes
+    //
+    //  When primary index fills (100 entries),
+    //  overflow pages handle additional agents.
+    //  Linked pages for unlimited discovery.
+    // ═══════════════════════════════════════════════
+
+    /// Init overflow index page.
+    pub fn init_index_page(
+        ctx: Context<InitIndexPageAccountConstraints>,
+        page_index: u8,
+    ) -> Result<()> {
+        instructions::index_page::init_index_page_handler(ctx, page_index)
+    }
+
+    /// Add agent to overflow page.
+    pub fn add_to_index_page(
+        ctx: Context<AddToIndexPageAccountConstraints>,
+        agent_pda: Pubkey,
+    ) -> Result<()> {
+        instructions::index_page::add_to_index_page_handler(ctx, agent_pda)
+    }
+
+    /// Remove agent from overflow page.
+    pub fn remove_from_index_page(
+        ctx: Context<RemoveFromIndexPageAccountConstraints>,
+        agent_pda: Pubkey,
+    ) -> Result<()> {
+        instructions::index_page::remove_from_index_page_handler(ctx, agent_pda)
+    }
+
+    /// Close empty overflow page. Reclaim rent.
+    pub fn close_index_page(ctx: Context<CloseIndexPageAccountConstraints>) -> Result<()> {
+        instructions::index_page::close_index_page_handler(ctx)
+    }
+
+    // ═══════════════════════════════════════════════
+    //  Migration — V1 → V2 Account Upgrades
+    //
+    //  Clean additive migration for mainnet accounts.
+    //  V1 accounts closed, V2 created with full state.
+    // ═══════════════════════════════════════════════
+
+    /// Migrate V1 escrow to V2 (nonce=0, SelfReport mode).
+    pub fn migrate_escrow_v1_to_v2(ctx: Context<MigrateEscrowV1ToV2AccountConstraints>) -> Result<()> {
+        instructions::migration::migrate_escrow_v1_to_v2_handler(ctx)
+    }
 }

@@ -444,7 +444,19 @@ pub struct CloseEscrowAccountConstraints<'info> {
     pub escrow: Account<'info, EscrowAccount>,
 }
 
-pub fn close_escrow_handler(_ctx: Context<CloseEscrowAccountConstraints>) -> Result<()> {
+pub fn close_escrow_handler(ctx: Context<CloseEscrowAccountConstraints>) -> Result<()> {
+    let escrow = &ctx.accounts.escrow;
+    let clock = Clock::get()?;
+
+    emit!(EscrowClosedEvent {
+        escrow: escrow.key(),
+        agent: escrow.agent,
+        depositor: escrow.depositor,
+        total_settled: escrow.total_settled,
+        total_calls_settled: escrow.total_calls_settled,
+        timestamp: clock.unix_timestamp,
+    });
+
     Ok(())
 }
 
@@ -664,7 +676,7 @@ fn calculate_settle_amount(
 }
 
 /// SPL Token Program ID: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
-fn is_spl_token_program(key: &Pubkey) -> bool {
+pub(super) fn is_spl_token_program(key: &Pubkey) -> bool {
     key.as_ref() == [
         6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70,
         206, 235, 121, 172, 28, 180, 133, 237, 95, 91, 55, 145,
