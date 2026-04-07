@@ -297,4 +297,96 @@ pub enum SapError {
     InvalidTokenAccount,
     #[msg("bad prog")]
     InvalidTokenProgram,
+
+    // ── v2.1: Escrow V2 ──
+    #[msg("bad security")]
+    InvalidSettlementSecurity,
+    #[msg("cosigner")]
+    CoSignerRequired,
+    #[msg("bad cosigner")]
+    InvalidCoSigner,
+    #[msg("bad arbiter")]
+    InvalidArbiter,
+    #[msg("arbiter=0")]
+    ArbiterRequired,
+    #[msg("nonce reused")]
+    EscrowNonceReused,
+
+    // ── v2.1: Pending Settlement / Dispute Window ──
+    #[msg("not pending")]
+    SettlementNotPending,
+    #[msg("already final")]
+    SettlementAlreadyFinalized,
+    #[msg("too early")]
+    DisputeWindowNotExpired,
+    #[msg("window closed")]
+    DisputeWindowExpired,
+    #[msg("not depositor")]
+    NotDepositor,
+    #[msg("dup dispute")]
+    DisputeAlreadyFiled,
+    #[msg("dispute open")]
+    DisputeStillOpen,
+    #[msg("not arbiter")]
+    NotArbiter,
+    #[msg("bad outcome")]
+    InvalidDisputeOutcome,
+
+    // ── v2.1: Staking ──
+    #[msg("stake<min")]
+    StakeBelowMinimum,
+    #[msg("no stake")]
+    NoStakeAccount,
+    #[msg("unstake pending")]
+    UnstakeAlreadyPending,
+    #[msg("cooldown")]
+    UnstakeCooldownNotMet,
+    #[msg("no unstake")]
+    NoUnstakePending,
+    #[msg("slash>stake")]
+    SlashExceedsStake,
+
+    // ── v2.1: Subscription ──
+    #[msg("sub active")]
+    SubscriptionAlreadyActive,
+    #[msg("sub cancelled")]
+    SubscriptionCancelled,
+    #[msg("no due")]
+    NoIntervalDue,
+    #[msg("sub low bal")]
+    SubscriptionInsufficientBalance,
+    #[msg("bad interval")]
+    InvalidBillingInterval,
+
+    // ── v2.1: Counter Shards ──
+    #[msg("bad shard")]
+    InvalidShardIndex,
+
+    // ── v2.1: Index Pagination ──
+    #[msg("page full")]
+    IndexPageFull,
+    #[msg("bad page")]
+    InvalidPageIndex,
+    #[msg("page≠empty")]
+    IndexPageNotEmpty,
+
+    // ── v2.1: Migration ──
+    #[msg("already v2")]
+    AlreadyMigrated,
+    #[msg("v1 only")]
+    MigrationV1Only,
+
+    // ── v2.1: Security Fixes ──
+    #[msg("disputed")]
+    SettlementDisputed,
+    #[msg("bad agent wallet")]
+    InvalidAgentWallet,
+    #[msg("stake agent mismatch")]
+    StakeAgentMismatch,
+    #[msg("not authority")]
+    NotAuthority,
+    #[msg("unstake below rent")]
+    UnstakeBelowRent,
+    #[msg("insufficient stake")]
+    InsufficientStake,
 }

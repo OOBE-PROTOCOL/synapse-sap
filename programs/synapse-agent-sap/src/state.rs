@@ -11,6 +11,38 @@ pub enum TokenType {
     Spl,
 }
 
+/// Settlement security level — determines how settle_calls is authorized.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, InitSpace)]
+pub enum SettlementSecurity {
+    /// Agent self-reports (legacy, backwards-compatible)
+    SelfReport,
+    /// Client co-signs every settlement TX
+    CoSigned,
+    /// Settlement enters pending state, dispute window applies
+    DisputeWindow,
+}
+
+/// Dispute resolution outcome.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, InitSpace)]
+pub enum DisputeOutcome {
+    /// Pending — not yet resolved
+    Pending,
+    /// Resolved in favor of depositor (refund)
+    DepositorWins,
+    /// Resolved in favor of agent (release funds)
+    AgentWins,
+    /// Expired — no dispute filed, funds auto-released
+    AutoReleased,
+}
+
+/// Subscription billing interval.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, InitSpace)]
+pub enum BillingInterval {
+    Daily,
+    Weekly,
+    Monthly,
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, InitSpace)]
 pub enum PluginType {
     Memory,
@@ -976,6 +1008,259 @@ pub struct LedgerPage {
     pub merkle_root_at_seal: [u8; 32], // merkle root snapshot at time of seal
     #[max_len(4096)]
     pub data: Vec<u8>,                 // frozen ring buffer contents (IMMUTABLE)
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  SAP v2.1 — Protocol Upgrade Accounts
+//
+//  All new accounts are ADDITIVE — no existing state is modified.
+//  Existing v1 instructions remain 100% backwards-compatible.
+//  New functionality lives in new instruction modules.
+// ═══════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────
+//  Settlement Security Level
+// ─────────────────────────────────────────────────────────────────
+
+impl EscrowAccount {
+    /// Default dispute window: ~15 min at 400ms/slot
+    pub const DEFAULT_DISPUTE_WINDOW_SLOTS: u64 = 2_160;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  EscrowAccountV2 — Extended Escrow with Settlement Security
+//  Seeds: ["sap_escrow_v2", agent_pda, depositor_wallet, nonce(u64 LE)]
+//
+//  1. nonce allows MULTIPLE escrows per (agent, depositor) pair
+//  2. settlement_security selects one of 3 verification modes:
+//     - SelfReport: backwards-compatible, agent settles unilaterally
+//     - CoSigned:   BOTH agent + client sign every settlement TX
+//     - DisputeWindow: settlement enters pending state for N slots
+//  3. Built-in arbiter for dispute resolution
+//  4. co_signer for bilateral settlement model
+// ─────────────────────────────────────────────────────────────────
+
+#[derive(InitSpace)]
+#[account]
+pub struct EscrowAccountV2 {
+    pub bump: u8,
+    pub version: u8,               // 2
+    pub agent: Pubkey,
+    pub depositor: Pubkey,
+    pub agent_wallet: Pubkey,
+    pub escrow_nonce: u64,         // allows multiple escrows per pair
+    pub balance: u64,
+    pub total_deposited: u64,
+    pub total_settled: u64,
+    pub total_calls_settled: u64,
+    pub price_per_call: u64,
+    pub max_calls: u64,
+    pub created_at: i64,
+    pub last_settled_at: i64,
+    pub expires_at: i64,
+    #[max_len(5)]
+    pub volume_curve: Vec<VolumeCurveBreakpoint>,
+    pub token_mint: Option<Pubkey>,
+    pub token_decimals: u8,
+    // ── v2 settlement security ──
+    pub settlement_security: SettlementSecurity,
+    pub dispute_window_slots: u64, // slots before auto-release (DisputeWindow)
+    pub settlement_index: u64,     // monotonic settlement counter
+    pub co_signer: Option<Pubkey>, // required co-signer (CoSigned)
+    pub arbiter: Option<Pubkey>,   // dispute resolver (DisputeWindow)
+    // ── v2 pending totals ──
+    pub pending_amount: u64,       // total lamports locked in pending settlements
+    pub pending_calls: u64,        // total calls in pending settlements
+}
+
+impl EscrowAccountV2 {
+    pub const VERSION: u8 = 2;
+    pub const MAX_VOLUME_CURVE: usize = 5;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  PendingSettlement — Dispute Window Escrow Lock
+//  Seeds: ["sap_pending", escrow_v2_pda, settlement_index(u64 LE)]
+//
+//  Created by settle_calls_v2 when settlement_security == DisputeWindow.
+//  Funds are held in the escrow until the dispute window passes.
+//  After release_slot, anyone can call finalize_settlement to
+//  transfer funds to the agent.  The depositor can file a dispute
+//  before release_slot, which freezes the settlement for arbiter
+//  resolution.
+// ─────────────────────────────────────────────────────────────────
+
+#[derive(InitSpace)]
+#[account]
+pub struct PendingSettlement {
+    pub bump: u8,
+    pub escrow: Pubkey,
+    pub agent: Pubkey,
+    pub agent_wallet: Pubkey,
+    pub depositor: Pubkey,
+    pub settlement_index: u64,
+    pub calls_to_settle: u64,
+    pub amount: u64,               // lamports/tokens locked
+    pub service_hash: [u8; 32],
+    pub created_at: i64,
+    pub release_slot: u64,         // slot after which auto-release allowed
+    pub is_finalized: bool,
+    pub is_disputed: bool,          // true if a dispute has been filed
+    pub outcome: DisputeOutcome,
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  DisputeRecord — On-Chain Dispute with Arbiter Resolution
+//  Seeds: ["sap_dispute", pending_settlement_pda]
+//
+//  Filed by depositor during the dispute window.
+//  Arbiter (set on escrow creation) resolves the dispute.
+//  Resolution outcomes:
+//    - DepositorWins: funds return to escrow balance, agent slashed
+//    - AgentWins: funds transfer to agent wallet
+// ─────────────────────────────────────────────────────────────────
+
+#[derive(InitSpace)]
+#[account]
+pub struct DisputeRecord {
+    pub bump: u8,
+    pub pending_settlement: Pubkey,
+    pub escrow: Pubkey,
+    pub depositor: Pubkey,
+    pub agent: Pubkey,
+    pub evidence_hash: [u8; 32],    // sha256 of depositor's offchain evidence
+    pub agent_evidence_hash: [u8; 32], // sha256 of agent's counter-evidence
+    pub arbiter: Pubkey,
+    pub outcome: DisputeOutcome,
+    pub created_at: i64,
+    pub resolved_at: i64,           // 0 = unresolved
+    pub resolution_hash: [u8; 32],  // sha256 of resolution evidence
+    pub slash_amount: u64,          // slashed from agent stake (if depositor wins)
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  AgentStake — Collateral for Honest Behavior
+//  Seeds: ["sap_stake", agent_pda]
+//
+//  Higher stake → higher trust.  Slashable on lost disputes.
+//  Unstaking has a cooldown (UNSTAKE_COOLDOWN_SLOTS ≈ 7 days).
+// ─────────────────────────────────────────────────────────────────
+
+#[derive(InitSpace)]
+#[account]
+pub struct AgentStake {
+    pub bump: u8,
+    pub agent: Pubkey,
+    pub wallet: Pubkey,
+    pub staked_amount: u64,
+    pub slashed_amount: u64,        // lifetime slashed
+    pub last_stake_at: i64,
+    pub unstake_requested_at: i64,  // 0 = no pending unstake
+    pub unstake_amount: u64,
+    pub unstake_available_at: i64,  // 0 = no pending unstake
+    pub total_disputes_won: u32,    // disputes where agent won
+    pub total_disputes_lost: u32,   // disputes where agent lost
+    pub created_at: i64,
+}
+
+impl AgentStake {
+    pub const MIN_STAKE: u64 = 100_000_000;          // 0.1 SOL
+    pub const UNSTAKE_COOLDOWN_SLOTS: u64 = 1_512_000; // ~7 days
+    pub const SLASH_BPS: u64 = 5_000;                 // 50% of dispute amount
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Subscription — Recurring Payment Model
+//  Seeds: ["sap_sub", agent_pda, subscriber_wallet, sub_id(u64 LE)]
+//
+//  Fixed-price unlimited calls for a billing interval.
+//  Subscriber pre-funds; agent claims each completed interval.
+//  Pro-rata refund on cancellation.
+// ─────────────────────────────────────────────────────────────────
+
+#[derive(InitSpace)]
+#[account]
+pub struct Subscription {
+    pub bump: u8,
+    pub agent: Pubkey,
+    pub subscriber: Pubkey,
+    pub agent_wallet: Pubkey,
+    pub sub_id: u64,
+    pub price_per_interval: u64,
+    pub billing_interval: BillingInterval,
+    pub token_mint: Option<Pubkey>,
+    pub token_decimals: u8,
+    pub balance: u64,
+    pub total_paid: u64,
+    pub intervals_paid: u32,
+    pub started_at: i64,
+    pub last_claimed_at: i64,
+    pub cancelled_at: i64,          // 0 = active
+    pub next_due_at: i64,
+    pub created_at: i64,
+}
+
+impl Subscription {
+    pub fn interval_seconds(interval: BillingInterval) -> i64 {
+        match interval {
+            BillingInterval::Daily => 86_400,
+            BillingInterval::Weekly => 604_800,
+            BillingInterval::Monthly => 2_592_000,
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  CounterShard — Sharded Global Counters
+//  Seeds: ["sap_shard", shard_index(u8)]
+//
+//  8 shards → 8× write throughput vs monolithic GlobalRegistry.
+//  Total = sum of all shards.  SDK reads all 8 in parallel.
+// ─────────────────────────────────────────────────────────────────
+
+#[derive(InitSpace)]
+#[account]
+pub struct CounterShard {
+    pub bump: u8,
+    pub shard_index: u8,
+    pub total_agents: u64,
+    pub active_agents: u64,
+    pub total_feedbacks: u64,
+    pub total_tools: u32,
+    pub total_vaults: u32,
+    pub total_attestations: u32,
+    pub total_settlements: u64,
+    pub total_disputes: u32,
+    pub total_subscriptions: u32,
+    pub last_updated: i64,
+}
+
+impl CounterShard {
+    pub const NUM_SHARDS: u8 = 8;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  IndexPage — Overflow Pages for Discovery Indexes
+//  Seeds: ["sap_idx_page", parent_index_pda, page_index(u8)]
+//
+//  When CapabilityIndex/ProtocolIndex/ToolCategoryIndex hits
+//  MAX_AGENTS/MAX_TOOLS (100), new entries go into IndexPage PDAs.
+//  Page 0 = the original index.  Pages 1..N = overflow.
+// ─────────────────────────────────────────────────────────────────
+
+#[derive(InitSpace)]
+#[account]
+pub struct IndexPage {
+    pub bump: u8,
+    pub parent_index: Pubkey,
+    pub page_index: u8,
+    #[max_len(100)]
+    pub entries: Vec<Pubkey>,
+    pub last_updated: i64,
+}
+
+impl IndexPage {
+    pub const MAX_ENTRIES: usize = 100;
 }
 
 
