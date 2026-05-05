@@ -401,7 +401,7 @@ Six instructions for pre-funded trustless micropayments between clients and agen
 | 54 | `settle_calls` | `calls_to_settle: u64`, `service_hash: [u8;32]` | Agent claims payment. Computes amount via base price + volume curve. Transfers funds to agent wallet. Emits `PaymentSettledEvent` as permanent receipt. |
 | 55 | `withdraw_escrow` | `amount: u64` | Client withdraws. Takes `min(amount, balance)`. |
 | 56 | `close_escrow` | ... | Closes empty escrow PDA. Balance must be zero. Rent → depositor. |
-| 57 | `settle_batch` | `settlements: Vec<Settlement>` | Batch settle up to 10 settlements in one TX. Volume curve spans entire batch. |
+| 57 | `settle_batch` | `settlements: Vec<Settlement>`, `batch_root: [u8;32]` | Batch settle up to 10 settlements in one TX. Volume curve spans entire batch. `batch_root = sha256(s_0.service_hash \|\| ... \|\| s_{N-1}.service_hash)` and seeds the anti-replay `SettlementReceipt` PDA. The 10-cap is a hard `require!` — raising it would require a program upgrade plus replacing the O(N²) dedup with a `BTreeSet`. |
 
 **Auth chain**:
 - `create_escrow`, `deposit_escrow`, `withdraw_escrow`, `close_escrow` → depositor (client) signs.
