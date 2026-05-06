@@ -46,3 +46,11 @@ For any code change, apply skills in order:
 - **Upgrade authority** — program is upgradeable, use `anchor upgrade`
 - **IDL compatibility** — new instructions are additive only
 - **Fund safety** — escrow/vault lamport math must be exact
+
+## Agent / Merchant Requirements (v0.2.0+)
+Every agent that accepts escrows MUST hold ALL of the following — design every new instruction, SDK helper, and indexer query assuming this is the minimum viable agent state:
+1. **Stake ≥ `AgentStake::MIN_STAKE`** (0.1 SOL) at PDA `["sap_stake", agent]`. Permanent floor: `request_unstake` refuses to drop below MIN_STAKE.
+2. **At least one published `ToolAccount`** at PDA `["sap_tool", agent, tool_id]`. Zero-tool agents are unrouteable.
+3. **Every tool MUST have a `schema_uri` (or inline `schema_hash`)** — JSON-Schema for inputs/outputs. SDK MUST refuse `publishTool` calls with missing schema. Tools without schema are not callable by automated clients (LLMs, routers).
+4. **Payment token allowlist** — only SOL or USDC (mainnet `EPjF…tDt1v` / devnet `4zMM…cDU`). Enforced by `validator::validate_payment_token`.
+

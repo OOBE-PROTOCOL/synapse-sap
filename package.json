@@ -7,6 +7,9 @@
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
   },
+  "socket": {
+  "ignore": ["network-access"]
+  },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1"
   },

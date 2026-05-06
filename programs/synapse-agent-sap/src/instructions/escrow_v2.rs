@@ -41,6 +41,29 @@ pub struct CreateEscrowV2AccountConstraints<'info> {
     )]
     pub agent: Account<'info, AgentAccount>,
 
+    /// v0.10 hardening: agent MUST have an active stake ≥ MIN_STAKE
+    /// before any new escrow can be opened.
+    #[account(
+        seeds = [b"sap_stake", agent.key().as_ref()],
+        bump = agent_stake.bump,
+        constraint = agent_stake.agent == agent.key() @ SapError::StakeAgentMismatch,
+        constraint = agent_stake.staked_amount >= AgentStake::MIN_STAKE @ SapError::AgentStakeRequired,
+    )]
+    pub agent_stake: Account<'info, AgentStake>,
+
+    #[account(
+        mut,
+        seeds = [b"sap_stats", agent.key().as_ref()],
+        bump = agent_stats.bump,
+    )]
+    pub agent_stats: Account<'info, AgentStats>,
+
+    #[account(
+        seeds = [b"sap_pricing", agent.key().as_ref()],
+        bump = pricing_menu.bump,
+    )]
+    pub pricing_menu: Account<'info, AgentPricingMenu>,
+
     #[account(
         init,
         payer = depositor,
@@ -54,7 +77,7 @@ pub struct CreateEscrowV2AccountConstraints<'info> {
 }
 
 pub fn create_escrow_v2_handler<'info>(
-    ctx: Context<'_, '_, 'info, 'info, CreateEscrowV2AccountConstraints<'info>>,
+    ctx: Context<'info, CreateEscrowV2AccountConstraints<'info>>,
     escrow_nonce: u64,
     price_per_call: u64,
     max_calls: u64,
@@ -70,33 +93,100 @@ pub fn create_escrow_v2_handler<'info>(
 ) -> Result<()> {
     let clock = Clock::get()?;
 
+    // v0.11 H-1: stake coverage — the new escrow's slashable share must be
+    // fully collateralised by the current AgentStake balance. With
+    // SLASH_BPS = 50%, an escrow of N lamports requires `stake ≥ N/2`.
+    // This guarantees per-escrow slash solvency at create-time.
+    // (Cross-escrow cumulative tracking lands in v0.12 via active_obligations.)
+    //
+    // v0.13: total stake coverage must include this escrow's max potential
+    // obligation. If max_calls == 0 → unlimited calls: cap deposit to
+    // initial_deposit only (no top-ups possible; max_obligation = initial_deposit).
+    let max_potential = if max_calls == 0 {
+        // Unlimited calls: obligation is capped at initial_deposit.
+        initial_deposit
+    } else {
+        price_per_call
+            .checked_mul(max_calls)
+            .ok_or(error!(SapError::ArithmeticOverflow))?
+    };
+    let required_coverage = (max_potential as u128)
+        .checked_mul(AgentStake::STAKE_COVERAGE_BPS as u128)
+        .ok_or(error!(SapError::ArithmeticOverflow))?
+        / 10_000u128;
+    let required_coverage_u64 = u64::try_from(required_coverage)
+        .map_err(|_| error!(SapError::ArithmeticOverflow))?;
+    let required_stake = required_coverage_u64.max(AgentStake::MIN_STAKE);
+    require!(
+        ctx.accounts.agent_stake.staked_amount >= required_stake,
+        SapError::StakeBelowCoverage
+    );
+
     // Validate settlement security mode
     let security = match settlement_security {
-        0 => SettlementSecurity::SelfReport,
+        0 => {
+            // v0.7: SelfReport is deprecated — reject new escrows with this mode
+            return Err(error!(SapError::SelfReportDeprecated));
+        }
         1 => {
             require!(co_signer.is_some(), SapError::CoSignerRequired);
+            // v0.13: co-signer must NOT be the agent's own wallet.
+            require!(
+                co_signer.unwrap() != ctx.accounts.agent.wallet,
+                SapError::CoSignerIsAgentWallet
+            );
             SettlementSecurity::CoSigned
         }
         2 => {
-            require!(arbiter.is_some(), SapError::ArbiterRequired);
             require!(dispute_window_slots > 0, SapError::InvalidSettlementSecurity);
             SettlementSecurity::DisputeWindow
         }
         _ => return Err(error!(SapError::InvalidSettlementSecurity)),
     };
 
-    // Validate volume curve
-    require!(volume_curve.len() <= EscrowAccountV2::MAX_VOLUME_CURVE, SapError::TooManyVolumeCurvePoints);
-    let mut prev = 0u32;
-    for bp in &volume_curve {
-        require!(bp.after_calls > prev || prev == 0, SapError::InvalidVolumeCurve);
-        prev = bp.after_calls;
+    // v0.13: validate price_per_call > 0
+    require!(price_per_call > 0, SapError::InvalidPricePerCall);
+
+    // v0.13: expires_at must be in the future or 0 (never). Already-expired
+    // escrows lock depositor funds with no usable path.
+    if expires_at > 0 {
+        require!(
+            expires_at > clock.unix_timestamp,
+            SapError::EscrowAlreadyExpired
+        );
     }
+
+    // Validate volume curve (v0.10: also enforces non-increasing prices)
+    require!(volume_curve.len() <= EscrowAccountV2::MAX_VOLUME_CURVE, SapError::TooManyVolumeCurvePoints);
+    for i in 1..volume_curve.len() {
+        require!(volume_curve[i].after_calls > volume_curve[i - 1].after_calls, SapError::InvalidVolumeCurve);
+        require!(
+            volume_curve[i].price_per_call <= volume_curve[i - 1].price_per_call,
+            SapError::VolumeCurveNotDescending
+        );
+        // v0.13: breakpoint price must be > 0 to prevent infinite loops in calculate_settle_amount
+        require!(
+            volume_curve[i].price_per_call > 0,
+            SapError::InvalidVolumeCurvePrice
+        );
+    }
+
+    // v0.10 hardening: payment-token allowlist (USDC ONLY for commercial escrows)
+    crate::validator::validate_payment_token(&token_mint)?;
+    let mint = token_mint.ok_or(error!(SapError::InvalidPaymentToken))?;
+    require!(is_accepted_usdc_mint(&mint), SapError::InvalidPaymentToken);
+
+    // v0.12 hardening: price_per_call must match a published USDC tier in AgentPricingMenu
+    let menu = &ctx.accounts.pricing_menu;
+    require!(
+        menu.validate_usdc_price(price_per_call),
+        SapError::PricingTierNotFound
+    );
 
     // Cache before mutable borrow
     let depositor_info = ctx.accounts.depositor.to_account_info();
     let escrow_info = ctx.accounts.escrow.to_account_info();
-    let sys_info = ctx.accounts.system_program.to_account_info();
+    let sys_id = ctx.accounts.system_program.key();
     let agent_key = ctx.accounts.agent.key();
     let agent_wallet = ctx.accounts.agent.wallet;
     let depositor_key = ctx.accounts.depositor.key();
@@ -128,6 +218,19 @@ pub fn create_escrow_v2_handler<'info>(
     escrow.arbiter = arbiter;
     escrow.pending_amount = 0;
     escrow.pending_calls = 0;
+    escrow.receipt_batch_count = 0;
+    // v0.13: dispute bond tracking + max obligation cap
+    escrow.dispute_bond_total = 0;
+    escrow.max_obligation = max_potential;
+    escrow.pending_settlement_count = 0;
+
+    // v0.12 H-1: increment active_escrows count on this agent.
+    // Prevents agent close while holding client funds.
+    let stats = &mut ctx.accounts.agent_stats;
+    stats.active_escrows = stats.active_escrows
+        .checked_add(1)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
+    stats.updated_at = clock.unix_timestamp;
 
     // Transfer initial deposit
     if initial_deposit > 0 {
@@ -137,7 +240,7 @@ pub fn create_escrow_v2_handler<'info>(
         } else {
             system_program::transfer(
                 CpiContext::new(
-                    sys_info,
+                    sys_id,
                     system_program::Transfer {
                         from: depositor_info,
                         to: escrow_info,
@@ -190,16 +293,31 @@ pub struct DepositEscrowV2AccountConstraints<'info> {
 }
 
 pub fn deposit_escrow_v2_handler<'info>(
-    ctx: Context<'_, '_, 'info, 'info, DepositEscrowV2AccountConstraints<'info>>,
+    ctx: Context<'info, DepositEscrowV2AccountConstraints<'info>>,
     _escrow_nonce: u64,
     amount: u64,
 ) -> Result<()> {
     let clock = Clock::get()?;
 
+    // v0.13: enforce max_obligation — the total balance of this escrow
+    // can never exceed the agent's staked coverage limit at creation time.
+    // Any deposit that would push balance past max_obligation is rejected.
+    // LEGACY: escrow created before v0.13 has max_obligation == 0; skip check.
+    let max_ob = ctx.accounts.escrow.max_obligation;
+    if max_ob > 0 {
+        let projected = ctx.accounts.escrow.balance
+            .checked_add(amount)
+            .ok_or(error!(SapError::ArithmeticOverflow))?;
+        require!(
+            projected <= max_ob,
+            SapError::EscrowCoverageExceeded
+        );
+    }
+
     let remaining = ctx.remaining_accounts;
     let depositor_info = ctx.accounts.depositor.to_account_info();
     let escrow_info = ctx.accounts.escrow.to_account_info();
-    let sys_info = ctx.accounts.system_program.to_account_info();
+    let sys_id = ctx.accounts.system_program.key();
     let is_spl = ctx.accounts.escrow.token_mint.is_some();
     let token_mint = ctx.accounts.escrow.token_mint;
 
@@ -212,7 +330,7 @@ pub fn deposit_escrow_v2_handler<'info>(
     } else {
         system_program::transfer(
             CpiContext::new(
-                sys_info,
+                sys_id,
                 system_program::Transfer {
                     from: depositor_info,
                     to: escrow_info,
@@ -249,7 +367,7 @@ pub fn deposit_escrow_v2_handler<'info>(
 // ─────────────────────────────────────────────────────────────────
 
 #[derive(Accounts)]
-#[instruction(escrow_nonce: u64)]
+#[instruction(escrow_nonce: u64, _calls_to_settle: u64, service_hash: [u8; 32])]
 pub struct SettleCallsV2AccountConstraints<'info> {
     /// Agent owner signs
     #[account(mut)]
@@ -278,11 +396,24 @@ pub struct SettleCallsV2AccountConstraints<'info> {
     )]
     pub escrow: Account<'info, EscrowAccountV2>,
 
+    /// v0.10 anti-replay: PDA bound to (escrow, service_hash).
+    /// In CoSigned mode this gates the immediate transfer; in
+    /// DisputeWindow mode this gates the pending-amount bump so the
+    /// same `service_hash` cannot be re-applied to inflate pending.
+    #[account(
+        init,
+        payer = wallet,
+        space = SettlementReceipt::DISCRIMINATOR.len() + SettlementReceipt::INIT_SPACE,
+        seeds = [b"sap_recv", escrow.key().as_ref(), service_hash.as_ref()],
+        bump,
+    )]
+    pub settlement_receipt: Account<'info, SettlementReceipt>,
+
     pub system_program: Program<'info, System>,
 }
 
 pub fn settle_calls_v2_handler<'info>(
-    ctx: Context<'_, '_, 'info, 'info, SettleCallsV2AccountConstraints<'info>>,
+    ctx: Context<'info, SettleCallsV2AccountConstraints<'info>>,
     _escrow_nonce: u64,
     calls_to_settle: u64,
     service_hash: [u8; 32],
@@ -290,17 +421,23 @@ pub fn settle_calls_v2_handler<'info>(
     let clock = Clock::get()?;
 
     require!(calls_to_settle >= 1, SapError::InvalidSettlementCalls);
+    // v0.13: prevent CU exhaustion — cap calls per settlement
+    require!(
+        calls_to_settle <= EscrowAccountV2::MAX_CALLS_PER_SETTLEMENT,
+        SapError::MaxCallsPerSettlementExceeded
+    );
 
     if ctx.accounts.escrow.expires_at > 0 {
         require!(clock.unix_timestamp < ctx.accounts.escrow.expires_at, SapError::EscrowExpired);
     }
 
     if ctx.accounts.escrow.max_calls > 0 {
+        let projected = ctx.accounts.escrow.total_calls_settled
+            .checked_add(ctx.accounts.escrow.pending_calls)
+            .and_then(|v| v.checked_add(calls_to_settle))
+            .ok_or(error!(SapError::ArithmeticOverflow))?;
         require!(
-            ctx.accounts.escrow.total_calls_settled
-                + ctx.accounts.escrow.pending_calls
-                + calls_to_settle
-                <= ctx.accounts.escrow.max_calls,
+            projected <= ctx.accounts.escrow.max_calls,
             SapError::EscrowMaxCallsExceeded
         );
     }
@@ -320,45 +457,10 @@ pub fn settle_calls_v2_handler<'info>(
 
     match ctx.accounts.escrow.settlement_security {
         SettlementSecurity::SelfReport => {
-            // Immediate transfer — v1 compatible
-            let wallet_info = ctx.accounts.wallet.to_account_info();
-            let escrow_info = ctx.accounts.escrow.to_account_info();
-            let remaining = ctx.remaining_accounts;
-            let agent_key = ctx.accounts.agent.key();
-
-            if ctx.accounts.escrow.token_mint.is_some() {
-                spl_transfer_from_escrow_v2(
-                    &escrow_info, remaining,
-                    &ctx.accounts.escrow.agent, &ctx.accounts.escrow.depositor,
-                    ctx.accounts.escrow.escrow_nonce, ctx.accounts.escrow.bump,
-                    amount, ctx.accounts.escrow.token_mint,
-                )?;
-            } else {
-                **escrow_info.try_borrow_mut_lamports()? -= amount;
-                **wallet_info.try_borrow_mut_lamports()? += amount;
-            }
-
-            let escrow = &mut ctx.accounts.escrow;
-            escrow.balance = escrow.balance.checked_sub(amount).ok_or(error!(SapError::ArithmeticOverflow))?;
-            escrow.total_settled = escrow.total_settled.checked_add(amount).ok_or(error!(SapError::ArithmeticOverflow))?;
-            escrow.total_calls_settled = escrow.total_calls_settled.checked_add(calls_to_settle).ok_or(error!(SapError::ArithmeticOverflow))?;
-            escrow.last_settled_at = clock.unix_timestamp;
-
-            let stats = &mut ctx.accounts.agent_stats;
-            stats.total_calls_served = stats.total_calls_served.checked_add(calls_to_settle).ok_or(error!(SapError::ArithmeticOverflow))?;
-            stats.updated_at = clock.unix_timestamp;
-
-            emit!(PaymentSettledEvent {
-                escrow: escrow.key(),
-                agent: agent_key,
-                depositor: escrow.depositor,
-                calls_settled: calls_to_settle,
-                amount,
-                service_hash,
-                total_calls_settled: escrow.total_calls_settled,
-                remaining_balance: escrow.balance,
-                timestamp: clock.unix_timestamp,
-            });
+            // v0.7: SelfReport is deprecated — no new settlements allowed
+            // Existing SelfReport escrows from v0.6 are frozen.
+            // Depositors should withdraw and create new CoSigned/DisputeWindow escrows.
+            return Err(error!(SapError::SelfReportDeprecated));
         }
         SettlementSecurity::CoSigned => {
             // Verify co-signer is present in remaining accounts as a Signer
@@ -418,6 +520,10 @@ pub fn settle_calls_v2_handler<'info>(
             escrow.settlement_index = escrow.settlement_index.checked_add(1).ok_or(error!(SapError::ArithmeticOverflow))?;
             escrow.pending_amount = escrow.pending_amount.checked_add(amount).ok_or(error!(SapError::ArithmeticOverflow))?;
             escrow.pending_calls = escrow.pending_calls.checked_add(calls_to_settle).ok_or(error!(SapError::ArithmeticOverflow))?;
+            // v0.13: track that a pending settlement now exists for this escrow
+            escrow.pending_settlement_count = escrow.pending_settlement_count
+                .checked_add(1)
+                .ok_or(error!(SapError::ArithmeticOverflow))?;
 
             let current_slot = Clock::get()?.slot;
             let release_slot = current_slot.checked_add(escrow.dispute_window_slots).ok_or(error!(SapError::ArithmeticOverflow))?;
@@ -442,6 +548,17 @@ pub fn settle_calls_v2_handler<'info>(
             });
         }
     }
+
+    // v0.10 anti-replay: persist receipt fields. The PDA itself was
+    // created by the `init` constraint and blocks future replays of
+    // the same `service_hash` against this escrow.
+    let receipt = &mut ctx.accounts.settlement_receipt;
+    receipt.bump = ctx.bumps.settlement_receipt;
+    receipt.escrow = ctx.accounts.escrow.key();
+    receipt.service_hash = service_hash;
+    receipt.calls_settled = calls_to_settle;
+    receipt.amount = amount;
+    receipt.settled_at = clock.unix_timestamp;
 
     Ok(())
 }
@@ -490,6 +607,7 @@ pub fn create_pending_settlement_handler(
     calls_to_settle: u64,
     amount: u64,
     service_hash: [u8; 32],
+    receipt_merkle_root: [u8; 32],
 ) -> Result<()> {
     let clock = Clock::get()?;
     let current_slot = clock.slot;
@@ -507,6 +625,7 @@ pub fn create_pending_settlement_handler(
     ps.calls_to_settle = calls_to_settle;
     ps.amount = amount;
     ps.service_hash = service_hash;
+    ps.receipt_merkle_root = receipt_merkle_root;
     ps.created_at = clock.unix_timestamp;
     ps.release_slot = release_slot;
     ps.is_finalized = false;
@@ -561,7 +680,7 @@ pub struct FinalizeSettlementAccountConstraints<'info> {
 }
 
 pub fn finalize_settlement_handler<'info>(
-    ctx: Context<'_, '_, 'info, 'info, FinalizeSettlementAccountConstraints<'info>>,
+    ctx: Context<'info, FinalizeSettlementAccountConstraints<'info>>,
 ) -> Result<()> {
     let clock = Clock::get()?;
     let current_slot = clock.slot;
@@ -606,6 +725,8 @@ pub fn finalize_settlement_handler<'info>(
     escrow.pending_amount = escrow.pending_amount.checked_sub(amount).ok_or(error!(SapError::ArithmeticOverflow))?;
     escrow.pending_calls = escrow.pending_calls.checked_sub(calls).ok_or(error!(SapError::ArithmeticOverflow))?;
     escrow.last_settled_at = clock.unix_timestamp;
+    // v0.13: decrement open-pending counter on escrow
+    escrow.pending_settlement_count = escrow.pending_settlement_count.saturating_sub(1);
 
     // Update agent stats
     let stats = &mut ctx.accounts.agent_stats;
@@ -648,7 +769,7 @@ pub struct WithdrawEscrowV2AccountConstraints<'info> {
 }
 
 pub fn withdraw_escrow_v2_handler<'info>(
-    ctx: Context<'_, '_, 'info, 'info, WithdrawEscrowV2AccountConstraints<'info>>,
+    ctx: Context<'info, WithdrawEscrowV2AccountConstraints<'info>>,
     amount: u64,
 ) -> Result<()> {
     let clock = Clock::get()?;
@@ -708,13 +829,26 @@ pub struct CloseEscrowV2AccountConstraints<'info> {
         has_one = depositor,
         constraint = escrow.balance == 0 @ SapError::EscrowNotEmpty,
         constraint = escrow.pending_amount == 0 @ SapError::SettlementNotPending,
+        constraint = escrow.pending_settlement_count == 0 @ SapError::PendingSettlementExists,
     )]
     pub escrow: Account<'info, EscrowAccountV2>,
+
+    #[account(
+        mut,
+        seeds = [b"sap_stats", escrow.agent.as_ref()],
+        bump,
+    )]
+    pub agent_stats: Account<'info, AgentStats>,
 }
 
 pub fn close_escrow_v2_handler(ctx: Context<CloseEscrowV2AccountConstraints>) -> Result<()> {
     let clock = Clock::get()?;
     let escrow = &ctx.accounts.escrow;
+
+    // v0.12: decrement active_escrows count on close.
+    let stats = &mut ctx.accounts.agent_stats;
+    stats.active_escrows = stats.active_escrows.saturating_sub(1);
+    stats.updated_at = clock.unix_timestamp;
 
     emit!(EscrowClosedEvent {
         escrow: escrow.key(),
@@ -801,7 +935,7 @@ fn spl_transfer_from_signer<'info>(
     }
 
     // M1-NEW fix: Validate token program ID (matches v1 security)
-    require!(super::escrow::is_spl_token_program(token_program.key), SapError::InvalidTokenProgram);
+    require!(is_spl_token_program(token_program.key), SapError::InvalidTokenProgram);
 
     let mut data = Vec::with_capacity(9);
     data.push(3u8);
@@ -853,8 +987,21 @@ pub fn spl_transfer_from_escrow_v2<'info>(
         require!(source_mint == mint, SapError::InvalidTokenAccount);
     }
 
+    // v0.13: Validate dest token is actually owned by the token program.
+    // Prevents sending tokens to a normal wallet pubkey.
+    require!(
+        dest_token.owner == token_program.key,
+        SapError::TokenAccountOwnerMismatch
+    );
+
+    // v0.13: dest token account must have SPL TokenAccount data size.
+    require!(
+        dest_token.data_len() >= 165,
+        SapError::InvalidTokenAccount
+    );
+
     // M1-NEW fix: Validate token program ID (matches v1 security)
-    require!(super::escrow::is_spl_token_program(token_program.key), SapError::InvalidTokenProgram);
+    require!(is_spl_token_program(token_program.key), SapError::InvalidTokenProgram);
 
     let mut data = Vec::with_capacity(9);
     data.push(3u8);
@@ -891,4 +1038,13 @@ pub fn spl_transfer_from_escrow_v2<'info>(
     )?;
 
     Ok(())
+}
+
+/// SPL Token Program ID: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
+pub(super) fn is_spl_token_program(key: &Pubkey) -> bool {
+    key.as_ref()
+        == [
+            6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235, 121, 172, 28, 180,
+            133, 237, 95, 91, 55, 145, 58, 140, 245, 133, 126, 255, 0, 169,
+        ]
 }

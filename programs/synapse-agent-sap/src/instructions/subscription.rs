@@ -54,7 +54,7 @@ pub fn create_subscription_handler(
 
     if initial_deposit > 0 {
         system_program::transfer(
-            CpiContext::new(ctx.accounts.system_program.to_account_info(), system_program::Transfer {
+            CpiContext::new(ctx.accounts.system_program.key(), system_program::Transfer {
                 from: ctx.accounts.subscriber.to_account_info(),
                 to: ctx.accounts.subscription.to_account_info(),
             }),
@@ -114,7 +114,7 @@ pub struct FundSubscriptionAccountConstraints<'info> {
 
 pub fn fund_subscription_handler(ctx: Context<FundSubscriptionAccountConstraints>, amount: u64) -> Result<()> {
     system_program::transfer(
-        CpiContext::new(ctx.accounts.system_program.to_account_info(), system_program::Transfer {
+        CpiContext::new(ctx.accounts.system_program.key(), system_program::Transfer {
             from: ctx.accounts.subscriber.to_account_info(),
             to: ctx.accounts.subscription.to_account_info(),
         }),
@@ -168,10 +168,12 @@ pub fn claim_interval_handler(ctx: Context<ClaimIntervalAccountConstraints>) -> 
 
     // Cap by available balance
     let actual_payment = total_due.min(sub.balance);
+    // v0.13: cap claimable intervals to prevent u32 truncation in intervals_paid.
+    let claimable_capped = claimable.min(u32::MAX as i64);
     let actual_intervals = if sub.price_per_interval > 0 {
         actual_payment / sub.price_per_interval
     } else {
-        claimable as u64
+        claimable_capped as u64
     };
     require!(actual_intervals > 0, SapError::SubscriptionInsufficientBalance);
 

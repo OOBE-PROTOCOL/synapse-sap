@@ -141,36 +141,16 @@ describe("01 — Agent Lifecycle", () => {
     expect(agent.pricing[1].tierId).to.equal("premium");
   });
 
-  // ── 4. Report Calls ──
-  it("Report calls_served incrementa il contatore su AgentStats", async () => {
-    await program.methods
-      .reportCalls(new BN(42))
-      .accountsStrict({
-        wallet: agentOwner.publicKey,
-        agent: agentPda,
-        agentStats: statsPda,
-      })
-      .signers([agentOwner])
-      .rpc();
-
-    const stats = await program.account.agentStats.fetch(statsPda);
-    expect(stats.totalCallsServed.toNumber()).to.equal(42);
+  // ── 4. Report Calls (legacy: removed in v0.7) ──
+  it.skip("Report calls_served incrementa il contatore su AgentStats", async () => {
+    // `reportCalls` was removed in v0.7. Calls are counted automatically
+    // through `settle_calls` / `settle_calls_v2`.
   });
 
-  // ── 5. Update Reputation (self-reported metrics) ──
-  it("Aggiorna latency e uptime dell'agente", async () => {
-    await program.methods
-      .updateReputation(150, 99) // 150ms avg latency, 99% uptime
-      .accountsStrict({
-        wallet: agentOwner.publicKey,
-        agent: agentPda,
-      })
-      .signers([agentOwner])
-      .rpc();
-
-    const agent = await program.account.agentAccount.fetch(agentPda);
-    expect(agent.avgLatencyMs).to.equal(150);
-    expect(agent.uptimePercent).to.equal(99);
+  // ── 5. Update Reputation (legacy: removed in v0.7) ──
+  it.skip("Aggiorna latency e uptime dell'agente", async () => {
+    // `updateReputation` was removed in v0.7. Reputation is derived from
+    // on-chain feedback and settlement records.
   });
 
   // ── 6. Deactivate Agent ──

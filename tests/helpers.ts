@@ -49,7 +49,20 @@ export const SEEDS = {
   MEM_CHUNK: Buffer.from("sap_mem_chunk"),
   BUFFER: Buffer.from("sap_buffer"),
   DIGEST: Buffer.from("sap_digest"),
+  /** v0.10.0 — anti-replay receipt PDA seed */
+  RECV: Buffer.from("sap_recv"),
+  /** v0.5.0 — agent stake collateral PDA seed */
+  STAKE: Buffer.from("sap_stake"),
 } as const;
+
+// USDC mints (v0.10.0 payment-token allowlist)
+export const USDC_MINT_MAINNET = new PublicKey(
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+);
+export const USDC_MINT_DEVNET = new PublicKey(
+  "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+);
+export const MIN_AGENT_STAKE_LAMPORTS = 100_000_000; // 0.1 SOL
 
 // ═══════════════════════════════════════════════════════════════════
 //  SHA-256 Helper
@@ -193,6 +206,50 @@ export function findEscrowPda(
     [SEEDS.ESCROW, agentPda.toBuffer(), depositor.toBuffer()],
     PROGRAM_ID
   );
+}
+
+/** v0.10.0 — anti-replay receipt PDA. */
+export function findSettlementReceiptPda(
+  escrowPda: PublicKey,
+  receiptKey: Buffer | Uint8Array | number[]
+): [PublicKey, number] {
+  const buf = Buffer.isBuffer(receiptKey)
+    ? receiptKey
+    : Buffer.from(receiptKey as Uint8Array);
+  if (buf.length !== 32) {
+    throw new Error(`receiptKey must be 32 bytes, got ${buf.length}`);
+  }
+  return PublicKey.findProgramAddressSync(
+    [SEEDS.RECV, escrowPda.toBuffer(), buf],
+    PROGRAM_ID
+  );
+}
+
+/** v0.5.0 — agent stake collateral PDA. */
+export function findStakePda(agentPda: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [SEEDS.STAKE, agentPda.toBuffer()],
+    PROGRAM_ID
+  );
+}
+
+/** v0.10.0 — compute deterministic batch root for `settle_batch`. */
+export function computeBatchRoot(serviceHashes: Array<Buffer | Uint8Array | number[]>): Buffer {
+  if (serviceHashes.length === 0) {
+    throw new Error("computeBatchRoot: serviceHashes must not be empty");
+  }
+  const h = createHash("sha256");
+  for (let i = 0; i < serviceHashes.length; i++) {
+    const raw = serviceHashes[i];
+    const buf = Buffer.isBuffer(raw)
+      ? raw
+      : Buffer.from(raw as Uint8Array);
+    if (buf.length !== 32) {
+      throw new Error(`serviceHashes[${i}] must be 32 bytes`);
+    }
+    h.update(buf);
+  }
+  return h.digest();
 }
 
 export function findAttestationPda(
@@ -360,6 +417,33 @@ export async function registerAgent(
     .rpc();
 
   return { agentPda, statsPda };
+}
+
+/**
+ * v0.10.0 — Bootstrap an `AgentStake` PDA for `wallet`'s agent so that
+ * the agent can accept new escrows. Funds the stake with exactly
+ * `MIN_AGENT_STAKE_LAMPORTS` (0.1 SOL).
+ */
+export async function initAgentStake(
+  program: Program<SynapseAgentSap>,
+  wallet: Keypair,
+  amountLamports: number = Number(MIN_AGENT_STAKE_LAMPORTS),
+): Promise<{ agentPda: PublicKey; stakePda: PublicKey }> {
+  const [agentPda] = findAgentPda(wallet.publicKey);
+  const [stakePda] = findStakePda(agentPda);
+
+  await program.methods
+    .initStake(new BN(amountLamports))
+    .accountsStrict({
+      wallet: wallet.publicKey,
+      agent: agentPda,
+      stake: stakePda,
+      systemProgram: SystemProgram.programId,
+    })
+    .signers([wallet])
+    .rpc();
+
+  return { agentPda, stakePda };
 }
 
 // ═══════════════════════════════════════════════════════════════════

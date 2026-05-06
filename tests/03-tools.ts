@@ -184,20 +184,10 @@ describe("03 — Tool Registry", () => {
     expect(tool.version).to.equal(2); // version bumped
   });
 
-  // ── 5. Report Invocations ──
-  it("Report 100 invocazioni del tool", async () => {
-    await program.methods
-      .reportToolInvocations(new BN(100))
-      .accountsStrict({
-        wallet: agentOwner.publicKey,
-        agent: agentPda,
-        tool: toolPda,
-      })
-      .signers([agentOwner])
-      .rpc();
-
-    const tool = await program.account.toolDescriptor.fetch(toolPda);
-    expect(tool.totalInvocations.toNumber()).to.equal(100);
+  // ── 5. Report Invocations (legacy: removed in v0.7) ──
+  it.skip("Report 100 invocazioni del tool", async () => {
+    // `reportToolInvocations` was removed in v0.7. Tool usage is tracked
+    // via on-chain settlement events.
   });
 
   // ── 6. Deactivate Tool ──

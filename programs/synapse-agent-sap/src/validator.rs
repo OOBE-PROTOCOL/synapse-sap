@@ -87,7 +87,13 @@ pub fn validate_capabilities(caps: &[Capability]) -> Result<()> {
     Ok(())
 }
 
-/// Validate volume curve: max points, ascending after_calls, price>0.
+/// Validate volume curve: max points, ascending after_calls,
+/// monotonically non-increasing prices (real volume discount).
+///
+/// v0.10 hardening: the legacy validator only enforced ascending
+/// `after_calls` thresholds.  An agent could publish a curve where
+/// the price *grew* with volume, silently overcharging clients past
+/// the breakpoint.  Both invariants are now required.
 pub fn validate_volume_curve(curve: &[VolumeCurveBreakpoint]) -> Result<()> {
     require!(
         curve.len() <= AgentAccount::MAX_VOLUME_CURVE_POINTS,
@@ -99,8 +105,36 @@ pub fn validate_volume_curve(curve: &[VolumeCurveBreakpoint]) -> Result<()> {
             curve[i].after_calls > curve[i - 1].after_calls,
             SapError::InvalidVolumeCurve
         );
+        require!(
+            curve[i].price_per_call <= curve[i - 1].price_per_call,
+            SapError::VolumeCurveNotDescending
+        );
     }
 
+    Ok(())
+}
+
+/// v0.10 hardening: payment token allowlist for new escrows.
+///
+/// Accepts only:
+///   - `None`               → native SOL
+///   - `Some(USDC_MAINNET)` → USDC on mainnet-beta
+///   - `Some(USDC_DEVNET)`  → USDC on devnet
+///
+/// Any other SPL mint is rejected.  Existing pre-v0.10 escrows
+/// that use other mints continue to operate (this validator is
+/// only invoked from `create_escrow*` instructions).
+/// v0.12 hardening: payment token allowlist for new commercial escrows.
+///
+/// Accepts ONLY USDC (mainnet or devnet). SOL native is NOT accepted.
+/// Existing pre-v0.10 escrows using other mints continue to operate
+/// (this validator is only invoked from create_escrow* instructions).
+pub fn validate_payment_token(token_mint: &Option<Pubkey>) -> Result<()> {
+    let mint = token_mint.ok_or(SapError::InvalidPaymentToken)?;
+    require!(
+        is_accepted_usdc_mint(&mint),
+        SapError::PaymentTokenNotAllowed
+    );
     Ok(())
 }
 

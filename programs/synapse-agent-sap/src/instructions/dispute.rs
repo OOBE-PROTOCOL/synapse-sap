@@ -4,14 +4,18 @@ use crate::events::*;
 use crate::errors::SapError;
 
 // ═══════════════════════════════════════════════════════════════════
-//  DISPUTE RESOLUTION — On-Chain Arbiter-Mediated Disputes
+//  DISPUTE RESOLUTION — Receipt-Based Auto-Resolution
 //
-//  Flow:
+//  v0.7 Flow (no arbiter):
 //    1. Agent calls settle_calls_v2 (DisputeWindow mode)
 //    2. Depositor reviews pending settlement
-//    3. If contested → file_dispute() within dispute window
-//    4. Arbiter reviews evidence → resolve_dispute()
-//    5. Outcome: DepositorWins (refund) or AgentWins (release)
+//    3. If contested → file_dispute(dispute_type, evidence_hash)
+//    4. Agent submits receipt proofs via submit_receipt_proof()
+//    5. auto_resolve_dispute() — permissionless resolution:
+//       - All calls proven → AgentWins
+//       - No proof + deadline passed → DepositorWins
+//       - Partial proof → PartialRefund (proportional)
+//       - Quality dispute → auto-checks then 50/50 fallback
 //
 //  Slash mechanics:
 //    - If DepositorWins AND agent has stake → slash 50% of dispute amount
@@ -60,6 +64,7 @@ pub struct FileDisputeAccountConstraints<'info> {
 pub fn file_dispute_handler(
     ctx: Context<FileDisputeAccountConstraints>,
     evidence_hash: [u8; 32],
+    dispute_type: u8, // 0=NonDelivery, 1=PartialDelivery, 2=Overcharge, 3=Quality
 ) -> Result<()> {
     let clock = Clock::get()?;
     let current_slot = clock.slot;
@@ -70,7 +75,49 @@ pub fn file_dispute_handler(
         SapError::DisputeWindowExpired
     );
 
-    let arbiter = ctx.accounts.escrow.arbiter.ok_or(error!(SapError::ArbiterRequired))?;
+    // Parse dispute type
+    let dtype = match dispute_type {
+        0 => DisputeType::NonDelivery,
+        1 => DisputeType::PartialDelivery,
+        2 => DisputeType::Overcharge,
+        3 => DisputeType::Quality,
+        _ => return Err(error!(SapError::InvalidDisputeType)),
+    };
+
+    // Quality disputes require a bond (10% of disputed amount)
+    let bond_amount = if dtype == DisputeType::Quality {
+        let amount = ctx.accounts.pending_settlement.amount;
+        amount
+            .checked_mul(AgentStake::QUALITY_DISPUTE_BOND_BPS)
+            .ok_or(error!(SapError::ArithmeticOverflow))?
+            / 10_000
+    } else {
+        0
+    };
+
+    // v0.13: Track dispute bond in escrow state (orphan protection)
+    if bond_amount > 0 {
+        let escrow = &mut ctx.accounts.escrow;
+        escrow.dispute_bond_total = escrow.dispute_bond_total
+            .checked_add(bond_amount)
+            .ok_or(error!(SapError::ArithmeticOverflow))?;
+    }
+
+    // Transfer bond if required
+    if bond_amount > 0 {
+        let depositor_info = ctx.accounts.depositor.to_account_info();
+        let escrow_info = ctx.accounts.escrow.to_account_info();
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.key(),
+                anchor_lang::system_program::Transfer {
+                    from: depositor_info,
+                    to: escrow_info,
+                },
+            ),
+            bond_amount,
+        )?;
+    }
 
     let dispute = &mut ctx.accounts.dispute;
     dispute.bump = ctx.bumps.dispute;
@@ -78,14 +125,19 @@ pub fn file_dispute_handler(
     dispute.escrow = ctx.accounts.escrow.key();
     dispute.depositor = ctx.accounts.depositor.key();
     dispute.agent = ctx.accounts.escrow.agent;
-    dispute.arbiter = arbiter;
+    dispute.dispute_type = dtype;
     dispute.evidence_hash = evidence_hash;
     dispute.agent_evidence_hash = [0u8; 32];
     dispute.outcome = DisputeOutcome::Pending;
+    dispute.resolution_layer = ResolutionLayer::Pending;
     dispute.resolution_hash = [0u8; 32];
     dispute.resolved_at = 0;
     dispute.created_at = clock.unix_timestamp;
     dispute.slash_amount = 0;
+    dispute.dispute_bond = bond_amount;
+    dispute.proven_calls = 0;
+    dispute.claimed_calls = ctx.accounts.pending_settlement.calls_to_settle as u32;
+    dispute.proof_deadline = clock.unix_timestamp + AgentStake::PROOF_DEADLINE_SECONDS;
 
     // Mark PendingSettlement as disputed so finalize_settlement is blocked
     ctx.accounts.pending_settlement.is_disputed = true;
@@ -97,7 +149,9 @@ pub fn file_dispute_handler(
         depositor: ctx.accounts.depositor.key(),
         agent: ctx.accounts.escrow.agent,
         evidence_hash,
-        arbiter,
+        dispute_type,
+        dispute_bond: bond_amount,
+        proof_deadline: dispute.proof_deadline,
         timestamp: clock.unix_timestamp,
     });
 
@@ -139,14 +193,11 @@ pub fn submit_agent_evidence_handler(
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  resolve_dispute — Arbiter resolves the dispute
+//  resolve_dispute — DEPRECATED in v0.7
 //
-//  outcome:
-//    2 = DepositorWins → refund pending amount to depositor
-//    3 = AgentWins    → release pending amount to agent
-//
-//  If DepositorWins and AgentStake exists, slash up to 50%
-//  of the dispute amount from the agent's stake.
+//  Arbiter-based resolution replaced by auto_resolve_dispute
+//  (receipt-based, permissionless).  Kept as no-op for IDL compat.
+//  Use auto_resolve_dispute in receipt.rs instead.
 // ─────────────────────────────────────────────────────────────────
 
 #[derive(Accounts)]
@@ -154,178 +205,40 @@ pub struct ResolveDisputeAccountConstraints<'info> {
     #[account(mut)]
     pub arbiter: Signer<'info>,
 
-    /// CHECK: Depositor receives refund if they win
+    /// CHECK: Depositor
     #[account(mut)]
     pub depositor: UncheckedAccount<'info>,
 
-    /// CHECK: Agent wallet receives funds if they win
+    /// CHECK: Agent wallet
     #[account(mut)]
     pub agent_wallet: UncheckedAccount<'info>,
 
     #[account(
-        mut,
         seeds = [b"sap_escrow_v2", escrow.agent.as_ref(), escrow.depositor.as_ref(), &escrow.escrow_nonce.to_le_bytes()],
         bump = escrow.bump,
     )]
     pub escrow: Account<'info, EscrowAccountV2>,
 
     #[account(
-        mut,
         seeds = [b"sap_pending", escrow.key().as_ref(), &pending_settlement.settlement_index.to_le_bytes()],
         bump = pending_settlement.bump,
         constraint = pending_settlement.escrow == escrow.key(),
-        constraint = !pending_settlement.is_finalized @ SapError::SettlementAlreadyFinalized,
     )]
     pub pending_settlement: Account<'info, PendingSettlement>,
 
     #[account(
-        mut,
         seeds = [b"sap_dispute", pending_settlement.key().as_ref()],
         bump = dispute.bump,
-        constraint = dispute.arbiter == arbiter.key() @ SapError::NotArbiter,
-        constraint = dispute.outcome == DisputeOutcome::Pending @ SapError::SettlementAlreadyFinalized,
     )]
     pub dispute: Account<'info, DisputeRecord>,
 
     #[account(
-        mut,
         seeds = [b"sap_stats", escrow.agent.as_ref()],
         bump = agent_stats.bump,
     )]
     pub agent_stats: Account<'info, AgentStats>,
 }
 
-pub fn resolve_dispute_handler<'info>(
-    ctx: Context<'_, '_, 'info, 'info, ResolveDisputeAccountConstraints<'info>>,
-    outcome: u8, // 2=DepositorWins, 3=AgentWins
-) -> Result<()> {
-    let clock = Clock::get()?;
-
-    let dispute_outcome = match outcome {
-        2 => DisputeOutcome::DepositorWins,
-        3 => DisputeOutcome::AgentWins,
-        _ => return Err(error!(SapError::InvalidDisputeOutcome)),
-    };
-
-    // Verify depositor / agent_wallet
-    require!(
-        ctx.accounts.depositor.key() == ctx.accounts.escrow.depositor,
-        SapError::NotDepositor
-    );
-    require!(
-        ctx.accounts.agent_wallet.key() == ctx.accounts.escrow.agent_wallet,
-        SapError::InvalidAgentWallet
-    );
-
-    let amount = ctx.accounts.pending_settlement.amount;
-    let calls = ctx.accounts.pending_settlement.calls_to_settle;
-
-    let escrow_info = ctx.accounts.escrow.to_account_info();
-    let depositor_info = ctx.accounts.depositor.to_account_info();
-    let wallet_info = ctx.accounts.agent_wallet.to_account_info();
-
-    match dispute_outcome {
-        DisputeOutcome::DepositorWins => {
-            // Refund to depositor (move from locked → depositor)
-            if ctx.accounts.escrow.token_mint.is_some() {
-                let remaining = ctx.remaining_accounts;
-                // M5 fix: Verify dest token account owner is depositor
-                require!(remaining.len() >= 3, SapError::SplTokenRequired);
-                let dest_data = remaining[1].try_borrow_data()?;
-                require!(dest_data.len() >= 64, SapError::InvalidTokenAccount);
-                let dest_owner = Pubkey::try_from(&dest_data[32..64])
-                    .map_err(|_| error!(SapError::InvalidTokenAccount))?;
-                require!(dest_owner == ctx.accounts.escrow.depositor, SapError::InvalidTokenAccount);
-                drop(dest_data);
-
-                super::escrow_v2::spl_transfer_from_escrow_v2(
-                    &escrow_info, remaining,
-                    &ctx.accounts.escrow.agent, &ctx.accounts.escrow.depositor,
-                    ctx.accounts.escrow.escrow_nonce, ctx.accounts.escrow.bump,
-                    amount, ctx.accounts.escrow.token_mint,
-                )?;
-            } else {
-                **escrow_info.try_borrow_mut_lamports()? -= amount;
-                **depositor_info.try_borrow_mut_lamports()? += amount;
-            }
-
-            let escrow = &mut ctx.accounts.escrow;
-            escrow.balance = escrow.balance.checked_sub(amount).ok_or(error!(SapError::ArithmeticOverflow))?;
-            escrow.pending_amount = escrow.pending_amount.checked_sub(amount).ok_or(error!(SapError::ArithmeticOverflow))?;
-            escrow.pending_calls = escrow.pending_calls.checked_sub(calls).ok_or(error!(SapError::ArithmeticOverflow))?;
-
-            // Try to slash agent stake if it exists in remaining accounts
-            let slash_amount = try_slash_from_remaining(
-                ctx.remaining_accounts,
-                amount,
-                &depositor_info,
-                &ctx.accounts.escrow.agent,
-                &ctx.accounts.dispute.key(),
-                &clock,
-            )?;
-
-            ctx.accounts.dispute.slash_amount = slash_amount;
-        }
-        DisputeOutcome::AgentWins => {
-            // Release to agent
-            if ctx.accounts.escrow.token_mint.is_some() {
-                let remaining = ctx.remaining_accounts;
-                // M5 fix: Verify dest token account owner is agent_wallet
-                require!(remaining.len() >= 3, SapError::SplTokenRequired);
-                let dest_data = remaining[1].try_borrow_data()?;
-                require!(dest_data.len() >= 64, SapError::InvalidTokenAccount);
-                let dest_owner = Pubkey::try_from(&dest_data[32..64])
-                    .map_err(|_| error!(SapError::InvalidTokenAccount))?;
-                require!(dest_owner == ctx.accounts.escrow.agent_wallet, SapError::InvalidTokenAccount);
-                drop(dest_data);
-
-                super::escrow_v2::spl_transfer_from_escrow_v2(
-                    &escrow_info, remaining,
-                    &ctx.accounts.escrow.agent, &ctx.accounts.escrow.depositor,
-                    ctx.accounts.escrow.escrow_nonce, ctx.accounts.escrow.bump,
-                    amount, ctx.accounts.escrow.token_mint,
-                )?;
-            } else {
-                **escrow_info.try_borrow_mut_lamports()? -= amount;
-                **wallet_info.try_borrow_mut_lamports()? += amount;
-            }
-
-            let escrow = &mut ctx.accounts.escrow;
-            escrow.balance = escrow.balance.checked_sub(amount).ok_or(error!(SapError::ArithmeticOverflow))?;
-            escrow.total_settled = escrow.total_settled.checked_add(amount).ok_or(error!(SapError::ArithmeticOverflow))?;
-            escrow.total_calls_settled = escrow.total_calls_settled.checked_add(calls).ok_or(error!(SapError::ArithmeticOverflow))?;
-            escrow.pending_amount = escrow.pending_amount.checked_sub(amount).ok_or(error!(SapError::ArithmeticOverflow))?;
-            escrow.pending_calls = escrow.pending_calls.checked_sub(calls).ok_or(error!(SapError::ArithmeticOverflow))?;
-            escrow.last_settled_at = clock.unix_timestamp;
-
-            let stats = &mut ctx.accounts.agent_stats;
-            stats.total_calls_served = stats.total_calls_served.checked_add(calls).ok_or(error!(SapError::ArithmeticOverflow))?;
-            stats.updated_at = clock.unix_timestamp;
-        }
-        _ => return Err(error!(SapError::InvalidDisputeOutcome)),
-    }
-
-    // Finalize
-    let ps = &mut ctx.accounts.pending_settlement;
-    ps.is_finalized = true;
-    ps.outcome = dispute_outcome;
-
-    let dispute = &mut ctx.accounts.dispute;
-    dispute.outcome = dispute_outcome;
-    dispute.resolved_at = clock.unix_timestamp;
-
-    emit!(DisputeResolvedEvent {
-        dispute: dispute.key(),
-        pending_settlement: ps.key(),
-        escrow: ctx.accounts.escrow.key(),
-        outcome,
-        slash_amount: dispute.slash_amount,
-        resolution_hash: dispute.resolution_hash,
-        timestamp: clock.unix_timestamp,
-    });
-
-    Ok(())
-}
 
 // ─────────────────────────────────────────────────────────────────
 //  close_dispute — Reclaim rent from finalized dispute
@@ -375,13 +288,93 @@ pub fn close_pending_settlement_handler(_ctx: Context<ClosePendingSettlementAcco
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  Internal: Slash from AgentStake typed account in remaining
+//  Internal: Slash from a typed AgentStake account (v0.11 H-3)
 //
-//  Fixed C1: Uses proper Anchor deserialization, verifies stake.agent
-//  matches escrow.agent, updates all relevant fields, emits event.
-// ═══════════════════════════════════════════════════════════════════
+//  Was previously `try_slash_from_remaining` which scanned remaining_accounts
+//  for an AccountInfo matching the AgentStake discriminator. That was unsafe
+//  because if the caller omitted the stake the slash silently became a no-op.
+//
+//  v0.11 hardening: callers now pass an Option<&mut Account<AgentStake>>
+//  obtained from a typed account in their context. The slash either runs or
+//  the entire transaction fails — no silent skip.
+//
+//  Backwards-compatible no-arg legacy variant `try_slash_from_remaining` is
+//  kept exported for any out-of-tree caller (none in this crate) but is
+//  marked `#[deprecated]`.
+// ══════════════════════════════════════════════════════════════════
 
-fn try_slash_from_remaining<'info>(
+/// v0.11 H-3: slash from a typed AgentStake account.
+///
+/// Returns the amount actually slashed (0 only if the agent had no stake left).
+pub fn try_slash_from_account<'info>(
+    stake: &mut Account<'info, AgentStake>,
+    dispute_amount: u64,
+    depositor: &AccountInfo<'info>,
+    expected_agent: &Pubkey,
+    dispute_key: &Pubkey,
+    clock: &Clock,
+) -> Result<u64> {
+    // Defence in depth — the caller's #[account(seeds = ...)] already enforces
+    // these, but check explicitly because a misconfigured caller is the only
+    // way to reach this function with a mismatched stake.
+    require!(stake.agent == *expected_agent, SapError::StakeAgentMismatch);
+
+    let slash_amount = dispute_amount
+        .checked_mul(AgentStake::SLASH_BPS)
+        .ok_or(error!(SapError::ArithmeticOverflow))?
+        / 10_000;
+    let actual_slash = slash_amount.min(stake.staked_amount);
+
+    if actual_slash == 0 {
+        return Ok(0);
+    }
+
+    // Move lamports stake → depositor
+    let stake_info = stake.to_account_info();
+    **stake_info.try_borrow_mut_lamports()? -= actual_slash;
+    **depositor.try_borrow_mut_lamports()? += actual_slash;
+
+    // v0.13: handle pending unstake — slash reduces staked_amount, so if an
+    // unstake is pending it must be reduced proportionally to prevent
+    // `complete_unstake` from underflowing (staked_amount < unstake_amount).
+    if stake.unstake_amount > 0 {
+        let unstake_proportion = stake.unstake_amount
+            .checked_mul(actual_slash)
+            .ok_or(error!(SapError::ArithmeticOverflow))?
+            / stake.staked_amount.max(1);
+        stake.unstake_amount = stake.unstake_amount.saturating_sub(unstake_proportion);
+        if stake.unstake_amount == 0 {
+            stake.unstake_requested_at = 0;
+            stake.unstake_available_at = 0;
+        }
+    }
+
+    stake.staked_amount = stake.staked_amount.saturating_sub(actual_slash);
+    stake.slashed_amount = stake.slashed_amount.saturating_add(actual_slash);
+    stake.total_disputes_lost = stake.total_disputes_lost.saturating_add(1);
+
+    emit!(StakeSlashedEvent {
+        agent: *expected_agent,
+        dispute: *dispute_key,
+        slash_amount: actual_slash,
+        remaining_staked: stake.staked_amount,
+        compensated_to: depositor.key(),
+        timestamp: clock.unix_timestamp,
+    });
+
+    Ok(actual_slash)
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  DEPRECATED: try_slash_from_remaining (pre-v0.11)
+//
+//  Left in place so any external caller still compiles, but every internal
+//  caller has been migrated to `try_slash_from_account`. Will be removed in
+//  v0.12 along with the active_obligations migration.
+// ══════════════════════════════════════════════════════════════════
+
+#[deprecated(note = "v0.11: use try_slash_from_account with a typed AgentStake account")]
+pub fn try_slash_from_remaining<'info>(
     remaining: &'info [AccountInfo<'info>],
     dispute_amount: u64,
     depositor: &AccountInfo<'info>,

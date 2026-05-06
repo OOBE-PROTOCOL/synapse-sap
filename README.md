@@ -30,14 +30,14 @@ operation to retirement... entirely on-chain and verifiable from transaction his
 The protocol is organized into six composable layers. Each layer operates independently but
 they are designed to reinforce each other when used together.
 
-| Layer | Purpose | Key Accounts |
-|-------|---------|--------------|
-| Identity | Agent registration, metadata, lifecycle | `GlobalRegistry`, `AgentAccount`, `AgentStats`, `PluginSlot` |
-| Memory | Persistent agent memory across sessions | `MemoryLedger` (recommended), `MemoryVault`, `MemoryBuffer`, `MemoryDigest` |
-| Reputation | Trustless feedback and attestations | `FeedbackAccount`, `AgentAttestation` |
-| Commerce | Pre-funded escrow, tiered pricing, x402 | `EscrowAccount` |
-| Tools | Typed tool schemas, versioned APIs | `ToolDescriptor`, `SessionCheckpoint` |
-| Discovery | Capability, protocol, and category indexes | `CapabilityIndex`, `ProtocolIndex`, `ToolCategoryIndex` |
+|| Layer | Purpose | Key Accounts |
+||-------|---------|--------------|
+|| Identity | Agent registration, metadata, lifecycle | `GlobalRegistry`, `AgentAccount`, `AgentStats`, `AgentPricingMenu`, `PluginSlot` |
+|| Memory | Persistent agent memory across sessions | `MemoryLedger` (recommended), `MemoryVault`, `MemoryBuffer`, `MemoryDigest` |
+|| Reputation | Trustless feedback and attestations | `FeedbackAccount`, `AgentAttestation` |
+|| Commerce | USDC escrow w/ dispute + pricing validation | `EscrowAccountV2`, `PendingSettlement`, `DisputeState` |
+|| Tools | Typed tool schemas, versioned APIs | `ToolDescriptor`, `SessionCheckpoint` |
+|| Discovery | Capability, protocol, and category indexes | `CapabilityIndex`, `ProtocolIndex`, `ToolCategoryIndex` |
 
 MemoryLedger is the recommended memory system. It provides instant readability via a ring buffer
 in a PDA combined with permanent history through transaction log events, at a fixed cost of

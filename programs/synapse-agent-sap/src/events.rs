@@ -608,7 +608,9 @@ pub struct DisputeFiledEvent {
     pub depositor: Pubkey,
     pub agent: Pubkey,
     pub evidence_hash: [u8; 32],
-    pub arbiter: Pubkey,
+    pub dispute_type: u8,
+    pub dispute_bond: u64,
+    pub proof_deadline: i64,
     pub timestamp: i64,
 }
 
@@ -666,6 +668,25 @@ pub struct StakeSlashedEvent {
     pub slash_amount: u64,
     pub remaining_staked: u64,
     pub compensated_to: Pubkey,
+    pub timestamp: i64,
+}
+
+/// v0.11 L-2: emitted when a `deposit_stake` clears a previously requested
+/// unstake (top-up = implicit cancel of the pending withdrawal).
+#[event]
+pub struct UnstakeCancelledEvent {
+    pub agent: Pubkey,
+    pub wallet: Pubkey,
+    pub cancelled_amount: u64,
+    pub timestamp: i64,
+}
+
+/// v0.11 L-3: emitted when an agent's stake account is closed and rent reclaimed.
+#[event]
+pub struct StakeClosedEvent {
+    pub agent: Pubkey,
+    pub wallet: Pubkey,
+    pub returned_lamports: u64,
     pub timestamp: i64,
 }
 
@@ -731,6 +752,50 @@ pub struct IndexPageCreatedEvent {
     pub parent_index: Pubkey,
     pub index_page: Pubkey,
     pub page_index: u8,
+    pub timestamp: i64,
+}
+
+// ═════════════════════════════════════════════
+//  v0.7: Receipt Batch Events
+// ═════════════════════════════════════════════
+
+/// Receipt batch committed on-chain.
+#[event]
+pub struct ReceiptBatchInscribedEvent {
+    pub escrow: Pubkey,
+    pub agent: Pubkey,
+    pub batch_index: u32,
+    pub merkle_root: [u8; 32],
+    pub call_count: u32,
+    pub period_start: i64,
+    pub period_end: i64,
+    pub timestamp: i64,
+}
+
+/// Receipt proof submitted during dispute.
+#[event]
+pub struct ReceiptProofSubmittedEvent {
+    pub dispute: Pubkey,
+    pub escrow: Pubkey,
+    pub agent: Pubkey,
+    pub receipts_submitted: u32,
+    pub receipts_verified: u32,
+    pub total_proven: u32,
+    pub timestamp: i64,
+}
+
+/// Dispute auto-resolved via receipt proofs (no arbiter).
+#[event]
+pub struct DisputeAutoResolvedEvent {
+    pub dispute: Pubkey,
+    pub pending_settlement: Pubkey,
+    pub escrow: Pubkey,
+    pub outcome: u8,
+    pub proven_calls: u32,
+    pub claimed_calls: u32,
+    pub agent_amount: u64,
+    pub depositor_amount: u64,
+    pub slash_amount: u64,
     pub timestamp: i64,
 }
 

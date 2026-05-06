@@ -297,6 +297,8 @@ pub enum SapError {
     InvalidTokenAccount,
     #[msg("bad prog")]
     InvalidTokenProgram,
+    #[msg("payment token not accepted (USDC only)")]
+    InvalidPaymentToken,
 
     // ── v2.1: Escrow V2 ──
     #[msg("bad security")]
@@ -389,4 +391,102 @@ pub enum SapError {
     UnstakeBelowRent,
     #[msg("insufficient stake")]
     InsufficientStake,
+
+    // ── v0.7: Receipt-Based Dispute Resolution ──
+    #[msg("SelfReport deprecated")]
+    SelfReportDeprecated,
+    #[msg("arbiter deprecated")]
+    ArbiterDeprecated,
+    #[msg("bad batch idx")]
+    InvalidBatchIndex,
+    #[msg("bad period")]
+    InvalidPeriod,
+    #[msg("bad dispute type")]
+    InvalidDisputeType,
+    #[msg("proof expired")]
+    ProofDeadlineExpired,
+    #[msg("proof not expired")]
+    ProofDeadlineNotExpired,
+    #[msg("bad receipt proof")]
+    InvalidReceiptProof,
+
+    // ── v0.10: Hardening (audit fixes) ──
+    /// service_hash already used for a previous settlement on this escrow.
+    #[msg("settlement replay")]
+    SettlementReplay,
+    /// Token mint not allowed: only SOL (None) or USDC are accepted.
+    #[msg("token not allowed")]
+    PaymentTokenNotAllowed,
+    /// Agent must have AgentStake PDA with at least MIN_STAKE before
+    /// any new escrow can be opened against them.
+    #[msg("agent stake required")]
+    AgentStakeRequired,
+    /// VaultDelegate.expires_at out of allowed range
+    /// (must be > now and <= now + MAX_DELEGATE_DURATION).
+    #[msg("delegate expiry invalid")]
+    DelegateExpiryInvalid,
+    /// close_agent blocked: an EscrowAccount or EscrowAccountV2(nonce=0)
+    /// still exists for this (agent, wallet) pair.
+    #[msg("escrow not closed")]
+    EscrowNotClosed,
+    /// Volume curve must be monotonically non-increasing in price
+    /// (real volume discounts only — no anti-discount footgun).
+    #[msg("curve not descending")]
+    VolumeCurveNotDescending,
+    /// Settlement batch contains a duplicated service_hash.
+    #[msg("dup service hash")]
+    DuplicateServiceHash,
+
+    // ── v0.11: Staking hardening ──
+    /// Stake below the per-escrow coverage requirement
+    /// (stake must cover the slashable share of the new escrow).
+    #[msg("stake under coverage")]
+    StakeBelowCoverage,
+    /// close_stake refused: stake account is not safe to close
+    /// (agent still active, pending unstake, or non-floor balance).
+    #[msg("stake not closable")]
+    StakeNotClosable,
+    /// auto_resolve_dispute requires the AgentStake account on a DepositorWins
+    /// outcome to slash collateral. Caller omitted it.
+    #[msg("agent stake account missing")]
+    AgentStakeAccountMissing,
+
+    // ── v0.12: Pricing menu + AgentStats hardening ──
+    #[msg("requested price_per_call does not match any tier in the agent pricing menu")]
+    PricingTierNotFound,
+    #[msg("agent stats must be upgraded before this operation (active_escrows field missing)")]
+    AgentStatsMigrationRequired,
+    #[msg("pricing menu is invalid or empty (at least one tier required)")]
+    InvalidPricingMenu,
+    // ── v0.13 Security Hardening ──
+    #[msg("calls per settlement exceeds maximum allowed (max 10000)")]
+    MaxCallsPerSettlementExceeded,
+    #[msg("volume curve breakpoint price must be > 0")]
+    InvalidVolumeCurvePrice,
+    #[msg("escrow deposit would exceed the agent's staked coverage limit")]
+    EscrowCoverageExceeded,
+    #[msg("co-signer cannot be the agent wallet itself")]
+    CoSignerIsAgentWallet,
+    #[msg("escrow has already expired")]
+    EscrowAlreadyExpired,
+    #[msg("escrow has an unresolved pending settlement")]
+    PendingSettlementExists,
+    #[msg("token account owner mismatch")]
+    TokenAccountOwnerMismatch,
+    #[msg("receipt proof exceeds maximum allowed count")]
+    MaxReceiptProofExceeded,
+    #[msg("merkle proof depth exceeds maximum allowed")]
+    MaxMerkleDepthExceeded,
+    #[msg("pending settlement amount does not match escrow pending amount")]
+    PendingAmountMismatch,
+    #[msg("stake slash would lock unstake request")]
+    StakeSlashLocksUnstake,
+    #[msg("price per call must be > 0")]
+    InvalidPricePerCall,
+    #[msg("subscription intervals overflow")]
+    SubscriptionIntervalOverflow,
+    #[msg("agent stats version mismatch — migration required")]
+    AgentStatsVersionMismatch,
+    #[msg("escrow version mismatch — migration required")]
+    EscrowVersionMismatch,
 }

@@ -32,6 +32,15 @@ pub struct RegisterAgentAccountConstraints<'info> {
     pub agent_stats: Account<'info, AgentStats>,
 
     #[account(
+        init,
+        payer = wallet,
+        space = AgentPricingMenu::DISCRIMINATOR.len() + AgentPricingMenu::INIT_SPACE,
+        seeds = [b"sap_pricing", agent.key().as_ref()],
+        bump,
+    )]
+    pub pricing_menu: Account<'info, AgentPricingMenu>,
+
+    #[account(
         mut,
         seeds = [b"sap_global"],
         bump = global_registry.bump,
@@ -66,6 +75,7 @@ pub fn register_handler(
 
     let clock = Clock::get()?;
     let cap_ids: Vec<String> = capabilities.iter().map(|c| c.id.clone()).collect();
+    let agent_key = ctx.accounts.agent.key();   // cache before mutable borrow
 
     // ── Initialize AgentAccount PDA ──
     let agent = &mut ctx.accounts.agent;
@@ -85,7 +95,7 @@ pub fn register_handler(
     agent.reputation_sum = 0;
     agent.total_calls_served = 0;
     agent.avg_latency_ms = 0;
-    agent.uptime_percent = 100;   // default to 100% until reported
+    agent.uptime_percent = 100; // default to 100% until reported
     agent.capabilities = capabilities;
     agent.pricing = pricing;
     agent.protocols = protocols;
@@ -94,11 +104,19 @@ pub fn register_handler(
     // ── Initialize AgentStats PDA (lightweight hot-path metrics) ──
     let stats = &mut ctx.accounts.agent_stats;
     stats.bump = ctx.bumps.agent_stats;
-    stats.agent = ctx.accounts.agent.key();
+    stats.agent = agent_key;
     stats.wallet = ctx.accounts.wallet.key();
     stats.total_calls_served = 0;
     stats.is_active = true;
+    stats.active_escrows = 0; // v0.12: counter of open escrows
     stats.updated_at = clock.unix_timestamp;
+
+    // ── Initialize AgentPricingMenu PDA (on-chain pricing validation) ──
+    let menu = &mut ctx.accounts.pricing_menu;
+    menu.bump = ctx.bumps.pricing_menu;
+    menu.agent = agent_key;
+    menu.tiers = agent.pricing.clone();
+    menu.updated_at = clock.unix_timestamp;
 
     // ── Update global registry ──
     let global = &mut ctx.accounts.global_registry;
@@ -137,6 +155,13 @@ pub struct UpdateAgentAccountConstraints<'info> {
         has_one = wallet,
     )]
     pub agent: Account<'info, AgentAccount>,
+
+    #[account(
+        mut,
+        seeds = [b"sap_pricing", agent.key().as_ref()],
+        bump = pricing_menu.bump,
+    )]
+    pub pricing_menu: Account<'info, AgentPricingMenu>,
 
     pub system_program: Program<'info, System>,
 }
@@ -186,7 +211,11 @@ pub fn update_handler(
         updated_fields.push("capabilities".to_string());
     }
     if let Some(p) = pricing {
-        agent.pricing = p;
+        agent.pricing = p.clone();
+        // v0.12: sync on-chain pricing menu for escrow validation
+        let menu = &mut ctx.accounts.pricing_menu;
+        menu.tiers = p;
+        menu.updated_at = Clock::get()?.unix_timestamp;
         updated_fields.push("pricing".to_string());
     }
     if let Some(protos) = protocols {
@@ -355,6 +384,14 @@ pub struct CloseAgentAccountConstraints<'info> {
 
     #[account(
         mut,
+        close = wallet,
+        seeds = [b"sap_pricing", agent.key().as_ref()],
+        bump,
+    )]
+    pub pricing_menu: Account<'info, AgentPricingMenu>,
+
+    #[account(
+        mut,
         seeds = [b"sap_global"],
         bump = global_registry.bump,
     )]
@@ -368,6 +405,13 @@ pub fn close_handler(ctx: Context<CloseAgentAccountConstraints>) -> Result<()> {
         SapError::VaultNotClosed
     );
 
+    // v0.12 H-1: block close if any escrow is still open for this agent.
+    // An agent that closes while holding client funds is an exit-scam vector.
+    require!(
+        ctx.accounts.agent_stats.active_escrows == 0,
+        SapError::EscrowNotClosed
+    );
+
     let ts = Clock::get()?.unix_timestamp;
     let global = &mut ctx.accounts.global_registry;
     global.total_agents = global.total_agents.saturating_sub(1);
@@ -378,93 +422,6 @@ pub fn close_handler(ctx: Context<CloseAgentAccountConstraints>) -> Result<()> {
     emit!(ClosedEvent {
         agent: ctx.accounts.agent.key(),
         wallet: ctx.accounts.wallet.key(),
-        timestamp: ts,
-    });
-
-    Ok(())
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  report_calls — Agent owner self-reports call metrics
-//  (separate from reputation — does NOT affect reputation_score)
-// ═══════════════════════════════════════════════════════════════════
-
-#[derive(Accounts)]
-pub struct ReportCallsAccountConstraints<'info> {
-    pub wallet: Signer<'info>,
-
-    /// CHECK: Agent PDA — seeds-verified, NOT deserialized.
-    #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
-        bump,
-    )]
-    pub agent: UncheckedAccount<'info>,
-
-    #[account(
-        mut,
-        seeds = [b"sap_stats", agent.key().as_ref()],
-        bump = agent_stats.bump,
-    )]
-    pub agent_stats: Account<'info, AgentStats>,
-}
-
-pub fn report_calls_handler(
-    ctx: Context<ReportCallsAccountConstraints>,
-    calls_served: u64,
-) -> Result<()> {
-    let stats = &mut ctx.accounts.agent_stats;
-    stats.total_calls_served = stats.total_calls_served
-        .checked_add(calls_served)
-        .ok_or(error!(SapError::ArithmeticOverflow))?;
-    stats.updated_at = Clock::get()?.unix_timestamp;
-
-    emit!(CallsReportedEvent {
-        agent: ctx.accounts.agent.key(),
-        wallet: ctx.accounts.wallet.key(),
-        calls_reported: calls_served,
-        total_calls_served: stats.total_calls_served,
-        timestamp: stats.updated_at,
-    });
-
-    Ok(())
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  update_reputation — Agent owner self-reports latency & uptime
-//  metrics. Does NOT affect feedback-based reputation_score.
-// ═══════════════════════════════════════════════════════════════════
-
-#[derive(Accounts)]
-pub struct UpdateReputationAccountConstraints<'info> {
-    pub wallet: Signer<'info>,
-
-    #[account(
-        mut,
-        seeds = [b"sap_agent", wallet.key().as_ref()],
-        bump = agent.bump,
-        has_one = wallet,
-    )]
-    pub agent: Account<'info, AgentAccount>,
-}
-
-pub fn update_reputation_handler(
-    ctx: Context<UpdateReputationAccountConstraints>,
-    avg_latency_ms: u32,
-    uptime_percent: u8,
-) -> Result<()> {
-    validator::validate_uptime_percent(uptime_percent)?;
-
-    let ts = Clock::get()?.unix_timestamp;
-    let agent = &mut ctx.accounts.agent;
-    agent.avg_latency_ms = avg_latency_ms;
-    agent.uptime_percent = uptime_percent;
-    agent.updated_at = ts;
-
-    emit!(ReputationUpdatedEvent {
-        agent: ctx.accounts.agent.key(),
-        wallet: ctx.accounts.wallet.key(),
-        avg_latency_ms,
-        uptime_percent,
         timestamp: ts,
     });
 

@@ -94,3 +94,62 @@ Every response must include these sections (skip if genuinely not applicable):
 - [ ] Is this the simplest possible solution?
 - [ ] Are there unnecessary fields or abstractions?
 - [ ] Is naming semantic and unambiguous?
+
+## v0.2.0 Hardening Invariants (must hold for every new instruction touching escrow / settlement / vault)
+
+- [ ] **Anti-replay:** any instruction that "consumes" a client-supplied
+      identifier (service hash, batch root, nonce) MUST init a
+      `SettlementReceipt`-style PDA seeded by that identifier. Anchor's
+      `init` constraint does the replay check for free.
+- [ ] **Stake gate:** every instruction that *opens* a new economic
+      relationship with an agent (escrow, subscription, future
+      revenue-share) MUST verify `AgentStake.staked_amount >= MIN_STAKE`.
+- [ ] **Token allowlist:** every instruction that accepts a `token_mint`
+      MUST call `validator::validate_payment_token(mint)` (allowlist =
+      None | USDC mainnet | USDC devnet).
+- [ ] **Checked math:** every lamport / token / reputation arithmetic
+      uses `checked_add` / `checked_sub` / `checked_mul`. No bare `+ - *`
+      on user-controlled values.
+- [ ] **Time bounds:** any `expires_at` / future-timestamp argument is
+      bounded ( `> now` AND `<= now + MAX_DURATION`).
+- [ ] **Curve monotonicity:** any per-volume / per-call price schedule
+      must be **non-increasing** — enforced via `validator::*` helpers.
+- [ ] **CEI:** Checks → Effects → Interactions. State mutations BEFORE
+      lamport / SPL transfers and CPIs.
+
+## Merchant / Agent Onboarding Requirements (v0.2.0+)
+
+Every agent registered on SAP that intends to **accept escrows or
+serve clients** MUST satisfy ALL of the following before going live.
+These are protocol-level requirements — design new instructions and
+client flows assuming they hold.
+
+1. **Stake collateral**
+   - Call `init_stake(initial_deposit)` with `initial_deposit >= AgentStake::MIN_STAKE` (0.1 SOL).
+   - The minimum stake is a **permanent collateral floor**: `request_unstake`
+     refuses to drop the balance below `MIN_STAKE`.
+   - PDA: `["sap_stake", agent]`.
+
+2. **Tools published**
+   - At least one `ToolAccount` MUST be created via `register_tool` /
+     `register_tool_v2`. Agents with zero tools are unrouteable and the
+     indexer will downrank or filter them.
+   - PDA: `["sap_tool", agent, tool_id]`.
+
+3. **Tool schema attached**
+   - Every `ToolAccount` MUST have a non-empty `schema_uri` (or inline
+     `schema_hash`) pointing to a JSON-Schema describing its inputs /
+     outputs. Tools without a schema are not callable by automated
+     clients (LLMs, routers) and SHOULD be rejected at the SDK boundary.
+   - SDK helper: `ToolsModule.publish({ ..., schemaUri })` — refuse the
+     call client-side when `schemaUri` is missing.
+
+4. **Payment token** (per escrow)
+   - Only SOL (`None`) or USDC (mainnet `EPjF…tDt1v` / devnet `4zMM…cDU`).
+   - Enforced by `validator::validate_payment_token`.
+
+When designing **new instructions** (custom tools, subscription tiers,
+revenue-share PDAs, dispute extensions), assume `(stake_ok, tools_ok,
+schema_ok)` is the minimum viable agent state. Add fresh constraints if
+the new instruction broadens the trust surface (e.g., autonomous
+spend → require higher MIN_STAKE multiple).

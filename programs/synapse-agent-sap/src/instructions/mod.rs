@@ -4,7 +4,6 @@ pub mod feedback;
 pub mod indexing;
 pub mod vault;
 pub mod tools;
-pub mod escrow;
 pub mod attestation;
 pub mod ledger;
 
@@ -15,7 +14,7 @@ pub mod staking;
 pub mod subscription;
 pub mod shards;
 pub mod index_page;
-pub mod migration;
+pub mod receipt;
 
 // Legacy modules — gated behind the "legacy-memory" feature.
 // Code is preserved, excluded from default binary to reduce deploy cost.
@@ -37,7 +36,6 @@ pub use feedback::*;
 pub use indexing::*;
 pub use vault::*;
 pub use tools::*;
-pub use escrow::*;
 pub use attestation::*;
 pub use ledger::*;
 
@@ -48,7 +46,7 @@ pub use staking::*;
 pub use subscription::*;
 pub use shards::*;
 pub use index_page::*;
-pub use migration::*;
+pub use receipt::*;
 
 #[cfg(feature = "legacy-memory")]
 pub use plugin::*;

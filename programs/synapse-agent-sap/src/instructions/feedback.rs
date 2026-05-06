@@ -73,8 +73,10 @@ pub fn give_handler(
         .ok_or(error!(SapError::ArithmeticOverflow))?;
     // reputation_score is 0-10000 (2 decimal precision)
     // score is 0-1000, so multiply by 10 for the extra decimal
-    agent.reputation_score =
-        ((agent.reputation_sum * 10) / agent.total_feedbacks as u64) as u32;
+    agent.reputation_score = (agent.reputation_sum
+        .checked_mul(10)
+        .ok_or(error!(SapError::ArithmeticOverflow))?
+        / agent.total_feedbacks as u64) as u32;
     agent.updated_at = clock.unix_timestamp;
 
     // ── Update global stats ──
@@ -148,8 +150,10 @@ pub fn handle_update_feedback(
         .saturating_sub(old_score as u64)
         .checked_add(new_score as u64)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
-    agent.reputation_score =
-        ((agent.reputation_sum * 10) / agent.total_feedbacks as u64) as u32;
+    agent.reputation_score = (agent.reputation_sum
+        .checked_mul(10)
+        .ok_or(error!(SapError::ArithmeticOverflow))?
+        / agent.total_feedbacks as u64) as u32;
     agent.updated_at = clock.unix_timestamp;
 
     emit!(FeedbackUpdatedEvent {
@@ -199,7 +203,10 @@ pub fn revoke_handler(ctx: Context<RevokeFeedbackAccountConstraints>) -> Result<
     agent.reputation_sum = agent.reputation_sum.saturating_sub(score as u64);
     agent.total_feedbacks = agent.total_feedbacks.saturating_sub(1);
     agent.reputation_score = if agent.total_feedbacks > 0 {
-        ((agent.reputation_sum * 10) / agent.total_feedbacks as u64) as u32
+        (agent.reputation_sum
+            .checked_mul(10)
+            .ok_or(error!(SapError::ArithmeticOverflow))?
+            / agent.total_feedbacks as u64) as u32
     } else {
         0
     };

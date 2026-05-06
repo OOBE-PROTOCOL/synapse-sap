@@ -35,9 +35,13 @@ import {
   findAttestationPda,
   findToolPda,
   findLedgerPda,
+  findStakePda,
+  findSettlementReceiptPda,
+  computeBatchRoot,
   airdrop,
   ensureGlobalInitialized,
   registerAgent,
+  initAgentStake,
   defaultRegistrationArgs,
   defaultCapability,
   defaultPricing,
@@ -65,6 +69,7 @@ describe("09 — Security & Exploit Prevention", () => {
   let globalPda: PublicKey;
   let agentPda: PublicKey;
   let statsPda: PublicKey;
+  let stakePda: PublicKey;
 
   before(async () => {
     await Promise.all([
@@ -81,6 +86,9 @@ describe("09 — Security & Exploit Prevention", () => {
     });
     agentPda = result.agentPda;
     statsPda = result.statsPda;
+    // v0.10 — stake-gate: bootstrap stake before any escrow.
+    const stakeRes = await initAgentStake(program, agentOwner);
+    stakePda = stakeRes.stakePda;
   });
 
   // ═══════════════════════════════════════════════════════════════
@@ -273,18 +281,9 @@ describe("09 — Security & Exploit Prevention", () => {
     );
   });
 
-  it("Errore: uptime > 100", async () => {
-    await expectError(
-      program.methods
-        .updateReputation(150, 101) // uptime > 100
-        .accountsStrict({
-          wallet: agentOwner.publicKey,
-          agent: agentPda,
-        })
-        .signers([agentOwner])
-        .rpc(),
-      "InvalidUptimePercent"
-    );
+  it.skip("Errore: uptime > 100 (legacy: updateReputation removed in v0.7)", async () => {
+    // Instruction `updateReputation` was removed; reputation is now derived
+    // from on-chain feedback / settlements. Kept skipped for history.
   });
 
   // ═══════════════════════════════════════════════════════════════
@@ -600,20 +599,25 @@ describe("09 — Security & Exploit Prevention", () => {
       .accountsStrict({
         depositor: client.publicKey,
         agent: agentPda,
+        agentStake: stakePda,
         escrow: escrowPda,
         systemProgram: SystemProgram.programId,
       })
       .signers([client])
       .rpc();
 
+    const h620 = randomHash();
+    const [r620] = findSettlementReceiptPda(escrowPda, h620);
     await expectError(
       program.methods
-        .settleCalls(new BN(1), randomHash())
+        .settleCalls(new BN(1), h620)
         .accountsStrict({
           wallet: agentOwner.publicKey,
           agent: agentPda,
           agentStats: statsPda,
           escrow: escrowPda,
+          settlementReceipt: r620,
+          systemProgram: SystemProgram.programId,
         })
         .signers([agentOwner])
         .rpc(),
@@ -649,20 +653,25 @@ describe("09 — Security & Exploit Prevention", () => {
       .accountsStrict({
         depositor: client.publicKey,
         agent: agentPda,
+        agentStake: stakePda,
         escrow: escrowPda,
         systemProgram: SystemProgram.programId,
       })
       .signers([client])
       .rpc();
 
+    const h670 = randomHash();
+    const [r670] = findSettlementReceiptPda(escrowPda, h670);
     await expectError(
       program.methods
-        .settleCalls(new BN(0), randomHash())
+        .settleCalls(new BN(0), h670)
         .accountsStrict({
           wallet: agentOwner.publicKey,
           agent: agentPda,
           agentStats: statsPda,
           escrow: escrowPda,
+          settlementReceipt: r670,
+          systemProgram: SystemProgram.programId,
         })
         .signers([agentOwner])
         .rpc(),
@@ -699,6 +708,7 @@ describe("09 — Security & Exploit Prevention", () => {
       .accountsStrict({
         depositor: client.publicKey,
         agent: agentPda,
+        agentStake: stakePda,
         escrow: escrowPda,
         systemProgram: SystemProgram.programId,
       })
@@ -743,6 +753,7 @@ describe("09 — Security & Exploit Prevention", () => {
       .accountsStrict({
         depositor: client.publicKey,
         agent: agentPda,
+        agentStake: stakePda,
         escrow: escrowPda,
         systemProgram: SystemProgram.programId,
       })
@@ -750,26 +761,34 @@ describe("09 — Security & Exploit Prevention", () => {
       .rpc();
 
     // Settle 2 → OK
+    const h766 = randomHash();
+    const [r766] = findSettlementReceiptPda(escrowPda, h766);
     await program.methods
-      .settleCalls(new BN(2), randomHash())
+      .settleCalls(new BN(2), h766)
       .accountsStrict({
         wallet: agentOwner.publicKey,
         agent: agentPda,
         agentStats: statsPda,
         escrow: escrowPda,
+        settlementReceipt: r766,
+        systemProgram: SystemProgram.programId,
       })
       .signers([agentOwner])
       .rpc();
 
     // Settle 1 more → FAIL (max exceeded)
+    const h779 = randomHash();
+    const [r779] = findSettlementReceiptPda(escrowPda, h779);
     await expectError(
       program.methods
-        .settleCalls(new BN(1), randomHash())
+        .settleCalls(new BN(1), h779)
         .accountsStrict({
           wallet: agentOwner.publicKey,
           agent: agentPda,
           agentStats: statsPda,
           escrow: escrowPda,
+          settlementReceipt: r779,
+          systemProgram: SystemProgram.programId,
         })
         .signers([agentOwner])
         .rpc(),
@@ -808,20 +827,25 @@ describe("09 — Security & Exploit Prevention", () => {
       .accountsStrict({
         depositor: client.publicKey,
         agent: agentPda,
+        agentStake: stakePda,
         escrow: escrowPda,
         systemProgram: SystemProgram.programId,
       })
       .signers([client])
       .rpc();
 
+    const emptyRoot = Buffer.alloc(32, 0);
+    const [rEmpty] = findSettlementReceiptPda(escrowPda, emptyRoot);
     await expectError(
       program.methods
-        .settleBatch([])
+        .settleBatch([], Array.from(emptyRoot))
         .accountsStrict({
           wallet: agentOwner.publicKey,
           agent: agentPda,
           agentStats: statsPda,
           escrow: escrowPda,
+          settlementReceipt: rEmpty,
+          systemProgram: SystemProgram.programId,
         })
         .signers([agentOwner])
         .rpc(),

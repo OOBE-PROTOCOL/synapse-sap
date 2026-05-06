@@ -689,6 +689,17 @@ pub fn add_vault_delegate_handler(
 ) -> Result<()> {
     let clock = Clock::get()?;
 
+    // v0.10 hardening: forbid never-expiring delegates and cap maximum
+    // duration at MAX_DELEGATE_DURATION_SECS (1 year).  Existing
+    // delegates created before the upgrade are unaffected.
+    let max_expiry = clock.unix_timestamp
+        .checked_add(VaultDelegate::MAX_DELEGATE_DURATION_SECS)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
+    require!(
+        expires_at > clock.unix_timestamp && expires_at <= max_expiry,
+        SapError::DelegateExpiryInvalid
+    );
+
     let del = &mut ctx.accounts.vault_delegate;
     del.bump = ctx.bumps.vault_delegate;
     del.vault = ctx.accounts.vault.key();

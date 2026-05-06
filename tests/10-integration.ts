@@ -47,8 +47,12 @@ import {
   findAttestationPda,
   findLedgerPda,
   findLedgerPagePda,
+  findStakePda,
+  findSettlementReceiptPda,
+  computeBatchRoot,
   airdrop,
   ensureGlobalInitialized,
+  initAgentStake,
   defaultCapability,
   defaultPricing,
   defaultRegistrationArgs,
@@ -71,6 +75,7 @@ interface AgentProfile {
   wallet: Keypair;
   agentPda?: PublicKey;
   statsPda?: PublicKey;
+  stakePda?: PublicKey;
 }
 
 describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
@@ -181,6 +186,9 @@ describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
 
       agent.agentPda = agentPda;
       agent.statsPda = statsPda;
+      // v0.10 — bootstrap agent stake so it can accept escrows.
+      const stakeRes = await initAgentStake(program, agent.wallet);
+      agent.stakePda = stakeRes.stakePda;
     }
 
     // Verify all registered
@@ -412,6 +420,7 @@ describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
       .accountsStrict({
         depositor: agents[1].wallet.publicKey,
         agent: agents[0].agentPda!,
+        agentStake: agents[0].stakePda!,
         escrow: escrowPda,
         systemProgram: SystemProgram.programId,
       })
@@ -419,13 +428,17 @@ describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
       .rpc();
 
     // SwapMaster settle 3 calls
+    const svcHash410 = randomHash();
+    const [receipt410] = findSettlementReceiptPda(escrowPda, svcHash410);
     await program.methods
-      .settleCalls(new BN(3), randomHash())
+      .settleCalls(new BN(3), svcHash410)
       .accountsStrict({
         wallet: agents[0].wallet.publicKey,
         agent: agents[0].agentPda!,
         agentStats: agents[0].statsPda!,
         escrow: escrowPda,
+        settlementReceipt: receipt410,
+        systemProgram: SystemProgram.programId,
       })
       .signers([agents[0].wallet])
       .rpc();
@@ -623,40 +636,14 @@ describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  //  PHASE 8: MULTI-AGENT REPORTING
+  //  PHASE 8: MULTI-AGENT REPORTING (legacy — removed in v0.7)
   // ═══════════════════════════════════════════════════════════════
+  // Instructions `reportCalls` and `updateReputation` were removed in v0.7.
+  // Reputation is now derived from on-chain feedback + settle_calls events.
+  // Tests kept skipped for historical context.
 
-  it("8.1 — Report calls per tutti gli agenti", async () => {
-    for (const agent of agents) {
-      await program.methods
-        .reportCalls(new BN(100))
-        .accountsStrict({
-          wallet: agent.wallet.publicKey,
-          agent: agent.agentPda!,
-          agentStats: agent.statsPda!,
-        })
-        .signers([agent.wallet])
-        .rpc();
-    }
-
-    for (const agent of agents) {
-      const stats = await program.account.agentStats.fetch(agent.statsPda!);
-      expect(stats.totalCallsServed.toNumber()).to.be.gte(100);
-    }
-  });
-
-  it("8.2 — Update reputation (latency + uptime) per tutti", async () => {
-    for (const agent of agents) {
-      await program.methods
-        .updateReputation(50, 98)
-        .accountsStrict({
-          wallet: agent.wallet.publicKey,
-          agent: agent.agentPda!,
-        })
-        .signers([agent.wallet])
-        .rpc();
-    }
-  });
+  it.skip("8.1 — Report calls per tutti gli agenti (legacy)", async () => {});
+  it.skip("8.2 — Update reputation per tutti (legacy)", async () => {});
 
   // ═══════════════════════════════════════════════════════════════
   //  PHASE 9: INDEXING FINALE — QUERY COMPLETA

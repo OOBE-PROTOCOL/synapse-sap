@@ -5,17 +5,14 @@ package_manager = "yarn"
 resolution = true
 skip-lint = false
 
-[programs.localnet]
+[programs.devnet]
 synapse_agent_sap = "SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ"
 
-[programs.devnet]
+[programs.localnet]
 synapse_agent_sap = "SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ"
 
 [programs.mainnet]
 synapse_agent_sap = "SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ"
-
-[registry]
-url = "https://api.apr.dev"
 
 [provider]
 cluster = "devnet"

@@ -436,54 +436,6 @@ pub fn close_tool_handler(ctx: Context<CloseToolAccountConstraints>) -> Result<(
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  report_tool_invocations — Increment the invocation counter
-//
-//  Self-reported by the agent owner (same pattern as report_calls).
-//  Useful for analytics and reputation signal.
-// ─────────────────────────────────────────────────────────────────
-
-#[derive(Accounts)]
-pub struct ReportToolInvocationsAccountConstraints<'info> {
-    pub wallet: Signer<'info>,
-
-    #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
-        bump = agent.bump,
-        has_one = wallet,
-    )]
-    pub agent: Account<'info, AgentAccount>,
-
-    #[account(
-        mut,
-        has_one = agent,
-    )]
-    pub tool: Account<'info, ToolDescriptor>,
-}
-
-pub fn report_tool_invocations_handler(
-    ctx: Context<ReportToolInvocationsAccountConstraints>,
-    invocations: u64,
-) -> Result<()> {
-    let clock = Clock::get()?;
-    let tool = &mut ctx.accounts.tool;
-
-    tool.total_invocations = tool.total_invocations
-        .checked_add(invocations)
-        .ok_or(error!(SapError::ArithmeticOverflow))?;
-    tool.updated_at = clock.unix_timestamp;
-
-    emit!(ToolInvocationReportedEvent {
-        agent: ctx.accounts.agent.key(),
-        tool: tool.key(),
-        invocations_reported: invocations,
-        total_invocations: tool.total_invocations,
-        timestamp: clock.unix_timestamp,
-    });
-
-    Ok(())
-}
-
-// ─────────────────────────────────────────────────────────────────
 //  create_session_checkpoint — Snapshot session state
 //  Seeds: ["sap_checkpoint", session.key(), checkpoint_index(u32 LE)]
 //

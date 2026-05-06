@@ -107,23 +107,6 @@ pub mod synapse_agent_sap {
         instructions::agent::close_handler(ctx)
     }
 
-    /// Self-report call metrics. No reputation_score effect.
-    pub fn report_calls(
-        ctx: Context<ReportCallsAccountConstraints>,
-        calls_served: u64,
-    ) -> Result<()> {
-        instructions::agent::report_calls_handler(ctx, calls_served)
-    }
-
-    /// Self-report latency & uptime. No reputation_score effect.
-    pub fn update_reputation(
-        ctx: Context<UpdateReputationAccountConstraints>,
-        avg_latency_ms: u32,
-        uptime_percent: u8,
-    ) -> Result<()> {
-        instructions::agent::update_reputation_handler(ctx, avg_latency_ms, uptime_percent)
-    }
-
     // ═══════════════════════════════════════════════
     //  Trustless Reputation (Feedback)
     // ═══════════════════════════════════════════════
@@ -523,14 +506,6 @@ pub mod synapse_agent_sap {
         instructions::tools::close_tool_handler(ctx)
     }
 
-    /// Report tool invocation count (self-reported by agent owner).
-    pub fn report_tool_invocations(
-        ctx: Context<ReportToolInvocationsAccountConstraints>,
-        invocations: u64,
-    ) -> Result<()> {
-        instructions::tools::report_tool_invocations_handler(ctx, invocations)
-    }
-
     // ═══════════════════════════════════════════════
     //  Session Checkpoints (Fast-Sync Snapshots)
     //
@@ -553,67 +528,6 @@ pub mod synapse_agent_sap {
         checkpoint_index: u32,
     ) -> Result<()> {
         instructions::tools::close_checkpoint_handler(ctx, checkpoint_index)
-    }
-
-    // ═══════════════════════════════════════════════
-    //  x402 Escrow Settlement Layer
-    //
-    //  Pre-funded trustless micropayments between
-    //  clients and agents.  Locked price per call,
-    //  max calls limit, direct lamport settlement.
-    //  PaymentSettledEvent = permanent TX log receipt.
-    // ═══════════════════════════════════════════════
-
-    /// Create escrow. Locks price_per_call + optional max_calls. token_mint: None=SOL.
-    pub fn create_escrow<'info>(
-        ctx: Context<'_, '_, 'info, 'info, CreateEscrowAccountConstraints<'info>>,
-        price_per_call: u64,
-        max_calls: u64,
-        initial_deposit: u64,
-        expires_at: i64,
-        volume_curve: Vec<VolumeCurveBreakpoint>,
-        token_mint: Option<Pubkey>,
-        token_decimals: u8,
-    ) -> Result<()> {
-        instructions::escrow::create_escrow_handler(ctx, price_per_call, max_calls, initial_deposit, expires_at, volume_curve, token_mint, token_decimals)
-    }
-
-    /// Deposit additional SOL into an existing escrow.
-    pub fn deposit_escrow<'info>(
-        ctx: Context<'_, '_, 'info, 'info, DepositEscrowAccountConstraints<'info>>,
-        amount: u64,
-    ) -> Result<()> {
-        instructions::escrow::deposit_escrow_handler(ctx, amount)
-    }
-
-    /// Agent settles calls — claims funds from escrow. service_hash = proof of work.
-    pub fn settle_calls<'info>(
-        ctx: Context<'_, '_, 'info, 'info, SettleCallsAccountConstraints<'info>>,
-        calls_to_settle: u64,
-        service_hash: [u8; 32],
-    ) -> Result<()> {
-        instructions::escrow::settle_calls_handler(ctx, calls_to_settle, service_hash)
-    }
-
-    /// Client withdraws from escrow. Withdraws min(amount, balance).
-    pub fn withdraw_escrow<'info>(
-        ctx: Context<'_, '_, 'info, 'info, WithdrawEscrowAccountConstraints<'info>>,
-        amount: u64,
-    ) -> Result<()> {
-        instructions::escrow::withdraw_escrow_handler(ctx, amount)
-    }
-
-    /// Close empty escrow PDA. Withdraw first.
-    pub fn close_escrow(ctx: Context<CloseEscrowAccountConstraints>) -> Result<()> {
-        instructions::escrow::close_escrow_handler(ctx)
-    }
-
-    /// Batch settle up to 10 settlements in one TX. Volume curve spans batch.
-    pub fn settle_batch<'info>(
-        ctx: Context<'_, '_, 'info, 'info, SettleBatchAccountConstraints<'info>>,
-        settlements: Vec<Settlement>,
-    ) -> Result<()> {
-        instructions::escrow::settle_batch_handler(ctx, settlements)
     }
 
     // ═══════════════════════════════════════════════
@@ -826,7 +740,7 @@ pub mod synapse_agent_sap {
 
     /// Create V2 escrow with settlement security mode.
     pub fn create_escrow_v2<'info>(
-        ctx: Context<'_, '_, 'info, 'info, CreateEscrowV2AccountConstraints<'info>>,
+        ctx: Context<'info, CreateEscrowV2AccountConstraints<'info>>,
         escrow_nonce: u64,
         price_per_call: u64,
         max_calls: u64,
@@ -849,7 +763,7 @@ pub mod synapse_agent_sap {
 
     /// Deposit into V2 escrow.
     pub fn deposit_escrow_v2<'info>(
-        ctx: Context<'_, '_, 'info, 'info, DepositEscrowV2AccountConstraints<'info>>,
+        ctx: Context<'info, DepositEscrowV2AccountConstraints<'info>>,
         escrow_nonce: u64,
         amount: u64,
     ) -> Result<()> {
@@ -858,7 +772,7 @@ pub mod synapse_agent_sap {
 
     /// Agent settles calls via V2 escrow. Mode-dispatched.
     pub fn settle_calls_v2<'info>(
-        ctx: Context<'_, '_, 'info, 'info, SettleCallsV2AccountConstraints<'info>>,
+        ctx: Context<'info, SettleCallsV2AccountConstraints<'info>>,
         escrow_nonce: u64,
         calls_to_settle: u64,
         service_hash: [u8; 32],
@@ -873,20 +787,21 @@ pub mod synapse_agent_sap {
         calls_to_settle: u64,
         amount: u64,
         service_hash: [u8; 32],
+        receipt_merkle_root: [u8; 32],
     ) -> Result<()> {
-        instructions::escrow_v2::create_pending_settlement_handler(ctx, settlement_index, calls_to_settle, amount, service_hash)
+        instructions::escrow_v2::create_pending_settlement_handler(ctx, settlement_index, calls_to_settle, amount, service_hash, receipt_merkle_root)
     }
 
     /// Finalize settlement after dispute window. Permissionless crank.
     pub fn finalize_settlement<'info>(
-        ctx: Context<'_, '_, 'info, 'info, FinalizeSettlementAccountConstraints<'info>>,
+        ctx: Context<'info, FinalizeSettlementAccountConstraints<'info>>,
     ) -> Result<()> {
         instructions::escrow_v2::finalize_settlement_handler(ctx)
     }
 
     /// Withdraw from V2 escrow (available balance only).
     pub fn withdraw_escrow_v2<'info>(
-        ctx: Context<'_, '_, 'info, 'info, WithdrawEscrowV2AccountConstraints<'info>>,
+        ctx: Context<'info, WithdrawEscrowV2AccountConstraints<'info>>,
         amount: u64,
     ) -> Result<()> {
         instructions::escrow_v2::withdraw_escrow_v2_handler(ctx, amount)
@@ -898,19 +813,20 @@ pub mod synapse_agent_sap {
     }
 
     // ═══════════════════════════════════════════════
-    //  Dispute Resolution
+    //  Dispute Resolution (v0.7 — Receipt-Based)
     //
-    //  On-chain arbiter-mediated dispute system.
-    //  Depositor files dispute → arbiter resolves →
-    //  funds released or refunded + optional slash.
+    //  Depositor files dispute → agent proves via
+    //  receipt merkle proofs → auto-resolved on-chain.
+    //  No arbiter required.
     // ═══════════════════════════════════════════════
 
     /// Depositor files dispute on a pending settlement.
     pub fn file_dispute(
         ctx: Context<FileDisputeAccountConstraints>,
         evidence_hash: [u8; 32],
+        dispute_type: u8,
     ) -> Result<()> {
-        instructions::dispute::file_dispute_handler(ctx, evidence_hash)
+        instructions::dispute::file_dispute_handler(ctx, evidence_hash, dispute_type)
     }
 
     /// Agent submits counter-evidence for a dispute.
@@ -921,14 +837,6 @@ pub mod synapse_agent_sap {
         instructions::dispute::submit_agent_evidence_handler(ctx, evidence_hash)
     }
 
-    /// Arbiter resolves dispute. outcome: 2=DepositorWins, 3=AgentWins.
-    pub fn resolve_dispute<'info>(
-        ctx: Context<'_, '_, 'info, 'info, ResolveDisputeAccountConstraints<'info>>,
-        outcome: u8,
-    ) -> Result<()> {
-        instructions::dispute::resolve_dispute_handler(ctx, outcome)
-    }
-
     /// Close finalized dispute PDA. Depositor reclaims rent.
     pub fn close_dispute(ctx: Context<CloseDisputeAccountConstraints>) -> Result<()> {
         instructions::dispute::close_dispute_handler(ctx)
@@ -937,6 +845,42 @@ pub mod synapse_agent_sap {
     /// Close finalized pending settlement PDA. Reclaim rent.
     pub fn close_pending_settlement(ctx: Context<ClosePendingSettlementAccountConstraints>) -> Result<()> {
         instructions::dispute::close_pending_settlement_handler(ctx)
+    }
+
+    // ═══════════════════════════════════════════════
+    //  Receipt Batch System (v0.7)
+    //
+    //  Agent inscribes merkle roots of dual-signed
+    //  call receipts. During disputes, agent proves
+    //  delivery via merkle inclusion proofs.
+    // ═══════════════════════════════════════════════
+
+    /// Agent commits a batch of receipt merkle roots.
+    pub fn inscribe_receipt_batch(
+        ctx: Context<InscribeReceiptBatchAccountConstraints>,
+        batch_index: u32,
+        merkle_root: [u8; 32],
+        call_count: u32,
+        period_start: i64,
+        period_end: i64,
+    ) -> Result<()> {
+        instructions::receipt::inscribe_receipt_batch_handler(ctx, batch_index, merkle_root, call_count, period_start, period_end)
+    }
+
+    /// Agent submits receipt proofs during dispute resolution.
+    pub fn submit_receipt_proof(
+        ctx: Context<SubmitReceiptProofAccountConstraints>,
+        receipt_hashes: Vec<[u8; 32]>,
+        merkle_proofs: Vec<Vec<[u8; 32]>>,
+    ) -> Result<()> {
+        instructions::receipt::submit_receipt_proof_handler(ctx, receipt_hashes, merkle_proofs)
+    }
+
+    /// Permissionless auto-resolution after proof deadline.
+    pub fn auto_resolve_dispute<'info>(
+        ctx: Context<'info, AutoResolveDisputeAccountConstraints<'info>>,
+    ) -> Result<()> {
+        instructions::receipt::auto_resolve_dispute_handler(ctx)
     }
 
     // ═══════════════════════════════════════════════
@@ -1065,17 +1009,5 @@ pub mod synapse_agent_sap {
     /// Close empty overflow page. Reclaim rent.
     pub fn close_index_page(ctx: Context<CloseIndexPageAccountConstraints>) -> Result<()> {
         instructions::index_page::close_index_page_handler(ctx)
-    }
-
-    // ═══════════════════════════════════════════════
-    //  Migration — V1 → V2 Account Upgrades
-    //
-    //  Clean additive migration for mainnet accounts.
-    //  V1 accounts closed, V2 created with full state.
-    // ═══════════════════════════════════════════════
-
-    /// Migrate V1 escrow to V2 (nonce=0, SelfReport mode).
-    pub fn migrate_escrow_v1_to_v2(ctx: Context<MigrateEscrowV1ToV2AccountConstraints>) -> Result<()> {
-        instructions::migration::migrate_escrow_v1_to_v2_handler(ctx)
     }
 }

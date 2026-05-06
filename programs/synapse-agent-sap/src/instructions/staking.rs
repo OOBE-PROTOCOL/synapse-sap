@@ -13,9 +13,13 @@ pub struct InitStakeAccountConstraints<'info> {
     #[account(mut)]
     pub wallet: Signer<'info>,
 
-    /// CHECK: Agent PDA — seeds-verified
-    #[account(seeds = [b"sap_agent", wallet.key().as_ref()], bump)]
-    pub agent: UncheckedAccount<'info>,
+    /// v0.11 M-2: typed agent account — stake cannot be opened for a non-existent agent.
+    #[account(
+        seeds = [b"sap_agent", wallet.key().as_ref()],
+        bump,
+        has_one = wallet,
+    )]
+    pub agent: Account<'info, AgentAccount>,
 
     #[account(
         init, payer = wallet,
@@ -33,7 +37,7 @@ pub fn init_stake_handler(ctx: Context<InitStakeAccountConstraints>, initial_dep
 
     // Transfer first, then mutate
     system_program::transfer(
-        CpiContext::new(ctx.accounts.system_program.to_account_info(), system_program::Transfer {
+        CpiContext::new(ctx.accounts.system_program.key(), system_program::Transfer {
             from: ctx.accounts.wallet.to_account_info(),
             to: ctx.accounts.stake.to_account_info(),
         }),
@@ -69,9 +73,13 @@ pub struct DepositStakeAccountConstraints<'info> {
     #[account(mut)]
     pub wallet: Signer<'info>,
 
-    /// CHECK: Agent PDA — seeds-verified
-    #[account(seeds = [b"sap_agent", wallet.key().as_ref()], bump)]
-    pub agent: UncheckedAccount<'info>,
+    /// v0.11 M-2: typed agent account.
+    #[account(
+        seeds = [b"sap_agent", wallet.key().as_ref()],
+        bump,
+        has_one = wallet,
+    )]
+    pub agent: Account<'info, AgentAccount>,
 
     #[account(
         mut,
@@ -86,7 +94,7 @@ pub struct DepositStakeAccountConstraints<'info> {
 pub fn deposit_stake_handler(ctx: Context<DepositStakeAccountConstraints>, amount: u64) -> Result<()> {
     let clock = Clock::get()?;
     system_program::transfer(
-        CpiContext::new(ctx.accounts.system_program.to_account_info(), system_program::Transfer {
+        CpiContext::new(ctx.accounts.system_program.key(), system_program::Transfer {
             from: ctx.accounts.wallet.to_account_info(),
             to: ctx.accounts.stake.to_account_info(),
         }),
@@ -96,6 +104,19 @@ pub fn deposit_stake_handler(ctx: Context<DepositStakeAccountConstraints>, amoun
     let stake = &mut ctx.accounts.stake;
     stake.staked_amount = stake.staked_amount.checked_add(amount).ok_or(error!(SapError::ArithmeticOverflow))?;
     stake.last_stake_at = clock.unix_timestamp;
+
+    // v0.11 L-2: top-up implicitly cancels any pending unstake.
+    // Emit a dedicated event so indexers can track the cancellation
+    // instead of inferring it from a missing UnstakeCompletedEvent.
+    let cancelled = stake.unstake_amount;
+    if stake.unstake_requested_at != 0 {
+        emit!(UnstakeCancelledEvent {
+            agent: ctx.accounts.agent.key(),
+            wallet: ctx.accounts.wallet.key(),
+            cancelled_amount: cancelled,
+            timestamp: clock.unix_timestamp,
+        });
+    }
     stake.unstake_requested_at = 0;
     stake.unstake_amount = 0;
     stake.unstake_available_at = 0;
@@ -114,9 +135,13 @@ pub fn deposit_stake_handler(ctx: Context<DepositStakeAccountConstraints>, amoun
 pub struct RequestUnstakeAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
-    /// CHECK: Agent PDA — seeds-verified
-    #[account(seeds = [b"sap_agent", wallet.key().as_ref()], bump)]
-    pub agent: UncheckedAccount<'info>,
+    /// v0.11 M-2: typed agent account.
+    #[account(
+        seeds = [b"sap_agent", wallet.key().as_ref()],
+        bump,
+        has_one = wallet,
+    )]
+    pub agent: Account<'info, AgentAccount>,
 
     #[account(
         mut,
@@ -136,9 +161,21 @@ pub fn request_unstake_handler(ctx: Context<RequestUnstakeAccountConstraints>, a
     require!(amount > 0, SapError::StakeBelowMinimum);
     require!(amount <= stake.staked_amount, SapError::InsufficientStake);
 
+    // R1 (v0.2.0 audit pass #2): permanent collateral floor.
+    // Once an agent has staked, MIN_STAKE is locked for the lifetime of the
+    // AgentStake PDA — it can only be recovered by `close_stake` (v0.11 L-3).
+    let remaining_after = stake
+        .staked_amount
+        .checked_sub(amount)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
+    require!(remaining_after >= AgentStake::MIN_STAKE, SapError::StakeBelowMinimum);
+
     stake.unstake_requested_at = clock.unix_timestamp;
     stake.unstake_amount = amount;
-    stake.unstake_available_at = clock.unix_timestamp.checked_add(604_800).ok_or(error!(SapError::ArithmeticOverflow))?;
+    stake.unstake_available_at = clock
+        .unix_timestamp
+        .checked_add(AgentStake::UNSTAKE_COOLDOWN_SECONDS)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
 
     emit!(UnstakeRequestedEvent {
         agent: ctx.accounts.agent.key(),
@@ -155,9 +192,13 @@ pub struct CompleteUnstakeAccountConstraints<'info> {
     #[account(mut)]
     pub wallet: Signer<'info>,
 
-    /// CHECK: Agent PDA — seeds-verified
-    #[account(seeds = [b"sap_agent", wallet.key().as_ref()], bump)]
-    pub agent: UncheckedAccount<'info>,
+    /// v0.11 M-2: typed agent account.
+    #[account(
+        seeds = [b"sap_agent", wallet.key().as_ref()],
+        bump,
+        has_one = wallet,
+    )]
+    pub agent: Account<'info, AgentAccount>,
 
     #[account(
         mut,
@@ -184,6 +225,20 @@ pub fn complete_unstake_handler(ctx: Context<CompleteUnstakeAccountConstraints>)
     let actual_withdraw = amount.min(max_withdraw);
     require!(actual_withdraw > 0, SapError::UnstakeBelowRent);
 
+    // v0.11 H-2: re-enforce the permanent collateral floor at completion time.
+    // Between request_unstake and complete_unstake (>= 7 days) a slash may have
+    // reduced staked_amount. Without this check an agent with disputes pending
+    // could still drain whatever is left of the cooldown'd amount.
+    let projected_stake = ctx
+        .accounts
+        .stake
+        .staked_amount
+        .saturating_sub(actual_withdraw);
+    require!(
+        projected_stake >= AgentStake::MIN_STAKE,
+        SapError::StakeBelowMinimum
+    );
+
     **stake_info.try_borrow_mut_lamports()? -= actual_withdraw;
     **wallet_info.try_borrow_mut_lamports()? += actual_withdraw;
 
@@ -202,3 +257,16 @@ pub fn complete_unstake_handler(ctx: Context<CompleteUnstakeAccountConstraints>)
     });
     Ok(())
 }
+
+// ══════════════════════════════════════════════════════════════════
+//  v0.11 L-3: close_stake — RESERVED for v0.12
+// ══════════════════════════════════════════════════════════════════
+//  Closing the stake before all open escrows are settled would leave any
+//  outstanding dispute uncollateralised (try_slash would slash 0).
+//  `deactivate_agent` does NOT currently enforce zero open escrows, so an
+//  `is_active == false` gate is not a sufficient guarantee on its own.
+//
+//  close_stake will land in v0.12 once `AgentStake.active_obligations`
+//  exists (realloc migration). The error variant `StakeNotClosable` and
+//  the event `StakeClosedEvent` are pre-registered to keep that future
+//  IDL change additive.

@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-Metaplex Agent Kit provides **NFT-based identity** for autonomous agents on Solana — a "passport" that answers *who is this agent and where can I reach it*. Synapse Agent Protocol (SAP) provides the **operational infrastructure** — payments, memory, reputation, tool schemas, and discovery indexing — that answers *how do I pay this agent, can I trust it, what tools does it expose, and what's our conversation history*.
+Metaplex Agent Kit provides **NFT-based identity** for autonomous agents on Solana.. a "passport" that answers *who is this agent and where can I reach it*. Synapse Agent Protocol (SAP) provides the **operational infrastructure** — payments, memory, reputation, tool schemas, and discovery indexing — that answers *how do I pay this agent, can I trust it, what tools does it expose, and what's our conversation history*.
 
 These two protocols are **complementary, not competing**. Together they create the most complete agent infrastructure stack on Solana: Metaplex handles identity and asset ownership, SAP handles everything that happens after discovery.
 
@@ -84,7 +84,7 @@ MPL Core Asset                          SAP AgentAccount
 **Effort**: ~1/2 week (SAP program update + SDK wrapper + CLI params)
 
 ---
-### Proposal 3 — Executive ↔ VaultDelegate Bridge
+### Proposal 2 — Executive ↔ VaultDelegate Bridge
 
 **Problem**: Metaplex has Executives (operate the agent), SAP has VaultDelegates (operate the memory vault). An operator authorized on one protocol should be authorized on both.
 
@@ -110,7 +110,7 @@ Agent Owner
 
 ---
 
-### Proposal 4 — Unified Discovery Layer
+### Proposal 3 — Unified Discovery Layer
 
 **Problem**: Metaplex has no on-chain discovery indexing. Finding agents requires enumerating entire collections. SAP has `CapabilityIndex`, `ProtocolIndex`, and `ToolCategoryIndex` but doesn't know about MPL Core Assets.
 
@@ -158,9 +158,7 @@ Consumer Query: "Find agents with capability 'jupiter:swap', score > 8000, that 
 | **Phase 1** | Proposal 2 — SDK helpers for dual registration | 3 days | None |
 | **Phase 4** | Proposal 4 — Unified Discovery Registry | 1 week | Phase 1 |
 | **Phase 5** | Proposal 1 — On-chain identity link (program update) | 1 week | Metaplex coordination |
-
-Phases 1–4 require **zero program changes on either side** — they're pure SDK composition. Phase 5 requires a SAP program update (adding `mpl_asset` field) and Metaplex coordination.
-
+ß
 ---
 
 ## Technical Contact

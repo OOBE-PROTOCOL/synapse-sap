@@ -26,9 +26,13 @@ import {
   findAgentPda,
   findStatsPda,
   findEscrowPda,
+  findStakePda,
+  findSettlementReceiptPda,
+  computeBatchRoot,
   airdrop,
   ensureGlobalInitialized,
   registerAgent,
+  initAgentStake,
   randomHash,
   expectError,
 } from "./helpers";
@@ -47,6 +51,7 @@ describe("05 — Escrow & x402 Payments", () => {
   let globalPda: PublicKey;
   let agentPda: PublicKey;
   let statsPda: PublicKey;
+  let stakePda: PublicKey;
   let escrowPda: PublicKey;
 
   const PRICE_PER_CALL = 100_000; // 0.0001 SOL
@@ -64,6 +69,9 @@ describe("05 — Escrow & x402 Payments", () => {
     });
     agentPda = result.agentPda;
     statsPda = result.statsPda;
+    // v0.10.0 — stake-gate: bootstrap the agent's stake before any escrow.
+    const stakeRes = await initAgentStake(program, agentOwner);
+    stakePda = stakeRes.stakePda;
   });
 
   // ── 1. Create Escrow ──
@@ -86,6 +94,7 @@ describe("05 — Escrow & x402 Payments", () => {
       .accountsStrict({
         depositor: client.publicKey,
         agent: agentPda,
+        agentStake: stakePda,
         escrow: escrowPda,
         systemProgram: SystemProgram.programId,
       })
@@ -123,17 +132,21 @@ describe("05 — Escrow & x402 Payments", () => {
   // ── 3. Settle Calls (agent claims payment) ──
   it("Agent fa settle di 3 chiamate", async () => {
     const balanceBefore = await connection.getBalance(agentOwner.publicKey);
+    const svcHash = randomHash();
+    const [receiptPda] = findSettlementReceiptPda(escrowPda, svcHash);
 
     await program.methods
       .settleCalls(
         new BN(3),        // calls_to_settle
-        randomHash()      // service_hash (proof of work)
+        svcHash           // service_hash (proof of work)
       )
       .accountsStrict({
         wallet: agentOwner.publicKey,
         agent: agentPda,
         agentStats: statsPda,
         escrow: escrowPda,
+        settlementReceipt: receiptPda,
+        systemProgram: SystemProgram.programId,
       })
       .signers([agentOwner])
       .rpc();
@@ -155,16 +168,24 @@ describe("05 — Escrow & x402 Payments", () => {
 
   // ── 4. Batch Settle ──
   it("Agent fa batch settle di 2 blocchi di chiamate", async () => {
+    const settlements = [
+      { callsToSettle: new BN(2), serviceHash: randomHash() },
+      { callsToSettle: new BN(1), serviceHash: randomHash() },
+    ];
+    const batchRoot = computeBatchRoot(
+      settlements.map((s) => Buffer.from(s.serviceHash)),
+    );
+    const [receiptPda] = findSettlementReceiptPda(escrowPda, batchRoot);
+
     await program.methods
-      .settleBatch([
-        { callsToSettle: new BN(2), serviceHash: randomHash() },
-        { callsToSettle: new BN(1), serviceHash: randomHash() },
-      ])
+      .settleBatch(settlements, Array.from(batchRoot))
       .accountsStrict({
         wallet: agentOwner.publicKey,
         agent: agentPda,
         agentStats: statsPda,
         escrow: escrowPda,
+        settlementReceipt: receiptPda,
+        systemProgram: SystemProgram.programId,
       })
       .signers([agentOwner])
       .rpc();
@@ -243,6 +264,7 @@ describe("05 — Escrow & x402 Payments", () => {
       .accountsStrict({
         depositor: client.publicKey,
         agent: agentPda,
+        agentStake: stakePda,
         escrow: escrowPda,
         systemProgram: SystemProgram.programId,
       })
@@ -262,14 +284,18 @@ describe("05 — Escrow & x402 Payments", () => {
       .rpc();
 
     // Try settle → should fail
+    const failHash = randomHash();
+    const [failReceipt] = findSettlementReceiptPda(escrowPda, failHash);
     await expectError(
       program.methods
-        .settleCalls(new BN(1), randomHash())
+        .settleCalls(new BN(1), failHash)
         .accountsStrict({
           wallet: agentOwner.publicKey,
           agent: agentPda,
           agentStats: statsPda,
           escrow: escrowPda,
+          settlementReceipt: failReceipt,
+          systemProgram: SystemProgram.programId,
         })
         .signers([agentOwner])
         .rpc(),

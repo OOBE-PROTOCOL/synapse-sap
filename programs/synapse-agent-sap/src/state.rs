@@ -1,6 +1,28 @@
 use anchor_lang::prelude::*;
 
 // ═══════════════════════════════════════════════════════════════════
+//  v0.10 Hardening — Payment token allowlist
+//
+//  Only native SOL (token_mint = None) or USDC (mainnet/devnet mint)
+//  are accepted as escrow payment tokens.  Any other SPL mint is
+//  rejected at create_escrow time.  Existing escrows pre-v0.10 keep
+//  working (settle/withdraw/close still functional) — the restriction
+//  applies only to NEW escrows.
+// ═══════════════════════════════════════════════════════════════════
+
+/// USDC on Solana mainnet-beta (Circle).
+pub const USDC_MAINNET: Pubkey = pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+/// USDC on Solana devnet (Circle test mint).
+pub const USDC_DEVNET: Pubkey = pubkey!("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
+
+/// Returns true if `mint` is an accepted payment token mint (USDC mainnet or devnet).
+/// SOL acceptance is signalled by `token_mint = None` and is checked at the call site.
+#[inline]
+pub fn is_accepted_usdc_mint(mint: &Pubkey) -> bool {
+    mint == &USDC_MAINNET || mint == &USDC_DEVNET
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  Enums
 // ═══════════════════════════════════════════════════════════════════
 
@@ -14,7 +36,8 @@ pub enum TokenType {
 /// Settlement security level — determines how settle_calls is authorized.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, InitSpace)]
 pub enum SettlementSecurity {
-    /// Agent self-reports (legacy, backwards-compatible)
+    /// DEPRECATED: Agent self-reports (v0.6 legacy, kept for deserialization compat)
+    #[deprecated(note = "SelfReport removed in v0.7 — use CoSigned or DisputeWindow")]
     SelfReport,
     /// Client co-signs every settlement TX
     CoSigned,
@@ -33,6 +56,34 @@ pub enum DisputeOutcome {
     AgentWins,
     /// Expired — no dispute filed, funds auto-released
     AutoReleased,
+    /// Partial refund — some calls proven, some not
+    PartialRefund,
+    /// Split — irresolvable quality dispute, 50/50
+    Split,
+}
+
+/// Dispute type — determines resolution path.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, InitSpace)]
+pub enum DisputeType {
+    /// Agent claims N calls but client received fewer → auto-resolvable via receipts
+    NonDelivery,
+    /// Agent delivered fewer calls than claimed → auto-resolvable via receipts
+    PartialDelivery,
+    /// Agent overcharged relative to agreed price → auto-resolvable via receipts
+    Overcharge,
+    /// Response quality is poor — requires bond, may escalate
+    Quality,
+}
+
+/// Resolution layer — how the dispute was resolved.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, InitSpace)]
+pub enum ResolutionLayer {
+    /// Pending resolution
+    Pending,
+    /// Resolved automatically via receipt proofs
+    Auto,
+    /// Resolved via governance / timeout fallback
+    Governance,
 }
 
 /// Subscription billing interval.
@@ -633,58 +684,38 @@ pub struct SessionCheckpoint {
 }
 
 
-
 // ═══════════════════════════════════════════════════════════════════
-//  Account: EscrowAccount (x402 Pre-Funded Micropayments)
-//  Seeds: ["sap_escrow", agent_pda, depositor_wallet]
+//  Account: AgentPricingMenu (On-Chain Pricing Validation)
+//  Seeds: ["sap_pricing", agent_pda]
 //
-//  Enables trustless micropayments between clients and agents.
-//  The client pre-funds the escrow at a locked-in price per call.
-//  The agent settles onchain after serving calls, emitting
-//  a PaymentSettledEvent with service_hash as proof of work.
+//  Stores theagent's pricing tiers in a dedicated PDA so that
+//  escrow_v2::create_escrow can validate `price_per_call` against
+//  the published menu — preventing agents from changing prices
+//  unilaterally after a client has locked funds.
 //
-//  x402 flow:
-//    1. Client discovers agent pricing → deposits into escrow
-//    2. Client calls agent via x402 HTTP endpoint
-//    3. Agent settles onchain (claims payment, receipt in TX log)
-//    4. Client can withdraw unused balance at any time
-//    5. Close escrow when done (rent returned to depositor)
-//
-//  Onchain guarantees:
-//    - Price per call is immutable (agent can't change it)
-//    - max_calls limits total exposure
-//    - Client can always withdraw remaining balance
-//    - PaymentSettledEvent = permanent zero-rent receipt
+//  Created during register_agent, updated by update_pricing_menu.
+//  Must contain at least one tier.  USDC-only for commercial escrows.
 // ═══════════════════════════════════════════════════════════════════
 
 #[derive(InitSpace)]
 #[account]
-pub struct EscrowAccount {
+pub struct AgentPricingMenu {
     pub bump: u8,
-    pub agent: Pubkey,            // provider agent PDA
-    pub depositor: Pubkey,        // client wallet that funded the escrow
-    pub agent_wallet: Pubkey,     // agent owner wallet (settlement destination)
-    pub balance: u64,             // available balance (lamports or smallest token unit)
-    pub total_deposited: u64,     // lifetime deposits
-    pub total_settled: u64,       // lifetime settlements
-    pub total_calls_settled: u64, // lifetime calls settled
-    pub price_per_call: u64,      // base price per call (smallest unit)
-    pub max_calls: u64,           // max calls allowed (0 = unlimited)
-    pub created_at: i64,
-    pub last_settled_at: i64,
-    pub expires_at: i64,          // 0 = never expires
-    // ── Native Solana Enhancements ──
-    /// Tiered pricing curve (max 5 breakpoints). Spans tier boundaries.
-    #[max_len(5)]
-    pub volume_curve: Vec<VolumeCurveBreakpoint>,
-    /// None = SOL, Some = SPL token.
-    pub token_mint: Option<Pubkey>,
-    /// Token decimals (9=SOL, 6=USDC). Informational.
-    pub token_decimals: u8,
+    pub agent: Pubkey,            // the AgentAccount PDA
+    /// Copy of AgentAccount pricing at creation time.
+    /// Max 10 tiers — enough for typical SaaS ladder.
+    #[max_len(10)]
+    pub tiers: Vec<PricingTier>,
+    pub updated_at: i64,
 }
 
-impl EscrowAccount {
-    pub const MAX_VOLUME_CURVE: usize = 5;
+impl AgentPricingMenu {
+    /// Returns true if at least one tier is USDC and price matches.
+    pub fn validate_usdc_price(&self, price_per_call: u64) -> bool {
+        self.tiers
+            .iter()
+            .any(|t| t.price_per_call == price_per_call && t.token_type == TokenType::Usdc)
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -710,6 +741,10 @@ pub struct AgentStats {
     pub wallet: Pubkey,           // owner wallet (for auth chain)
     pub total_calls_served: u64,  // authoritative call counter
     pub is_active: bool,          // mirrored from AgentAccount
+    /// v0.12 H-1 hardening: counter of open escrows for this agent.
+    /// Incremented on create_escrow, decremented on close_escrow.
+    /// close_agent refuses to execute unless this is zero.
+    pub active_escrows: u32,
     pub updated_at: i64,
 }
 
@@ -1019,15 +1054,6 @@ pub struct LedgerPage {
 // ═══════════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────────────────────────
-//  Settlement Security Level
-// ─────────────────────────────────────────────────────────────────
-
-impl EscrowAccount {
-    /// Default dispute window: ~15 min at 400ms/slot
-    pub const DEFAULT_DISPUTE_WINDOW_SLOTS: u64 = 2_160;
-}
-
-// ─────────────────────────────────────────────────────────────────
 //  EscrowAccountV2 — Extended Escrow with Settlement Security
 //  Seeds: ["sap_escrow_v2", agent_pda, depositor_wallet, nonce(u64 LE)]
 //
@@ -1067,15 +1093,60 @@ pub struct EscrowAccountV2 {
     pub dispute_window_slots: u64, // slots before auto-release (DisputeWindow)
     pub settlement_index: u64,     // monotonic settlement counter
     pub co_signer: Option<Pubkey>, // required co-signer (CoSigned)
-    pub arbiter: Option<Pubkey>,   // dispute resolver (DisputeWindow)
+    /// DEPRECATED in v0.7 — arbiter removed, disputes auto-resolved via receipts
+    pub arbiter: Option<Pubkey>,
     // ── v2 pending totals ──
     pub pending_amount: u64,       // total lamports locked in pending settlements
     pub pending_calls: u64,        // total calls in pending settlements
+    // ── v0.7 receipt tracking ──
+    pub receipt_batch_count: u32,  // counter for ReceiptBatch PDAs
+    // ── v0.13 hardening ──
+    /// Cumulative dispute bonds held in escrow (orphan protection).
+    pub dispute_bond_total: u64,
+    /// Maximum balance allowed (set at creation time based on stake coverage).
+    pub max_obligation: u64,
+    /// Number of non-finalized PendingSettlement PDAs for this escrow.
+    pub pending_settlement_count: u32,
 }
 
 impl EscrowAccountV2 {
     pub const VERSION: u8 = 2;
     pub const MAX_VOLUME_CURVE: usize = 5;
+    /// v0.13: Maximum calls that can be settled in a single TX (prevents CU exhaustion).
+    pub const MAX_CALLS_PER_SETTLEMENT: u64 = 10_000;
+    /// v0.13: Maximum receipt proofs allowed in a single submit_receipt_proof call.
+    pub const MAX_RECEIPT_PROOFS: usize = 100;
+    /// v0.13: Maximum depth of a single merkle proof (2^32 leaves).
+    pub const MAX_MERKLE_DEPTH: usize = 32;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  ReceiptBatch — Merkle Root of Off-Chain Call Receipts
+//  Seeds: ["sap_receipt", escrow_v2_pda, batch_index(u32 LE)]
+//
+//  Agent periodically commits a merkle root of dual-signed
+//  call receipts to prove service delivery.  Each receipt is:
+//    { call_id, tool_id, input_hash, output_hash,
+//      timestamp, client_sig, agent_sig }
+//
+//  During disputes, the agent presents individual receipts +
+//  merkle proofs to cryptographically prove delivery.
+//
+//  Cost: ~0.002 SOL per batch (fixed PDA, never grows).
+//  One batch per billing period is typical.
+// ─────────────────────────────────────────────────────────────────
+
+#[derive(InitSpace)]
+#[account]
+pub struct ReceiptBatch {
+    pub bump: u8,
+    pub escrow: Pubkey,           // parent EscrowAccountV2 PDA
+    pub batch_index: u32,         // sequential per escrow (0, 1, 2, ...)
+    pub merkle_root: [u8; 32],    // sha256 merkle tree root of all receipts
+    pub call_count: u32,          // number of receipts in this batch
+    pub period_start: i64,        // first receipt timestamp in batch
+    pub period_end: i64,          // last receipt timestamp in batch
+    pub inscribed_at: i64,        // when committed on-chain
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -1102,6 +1173,7 @@ pub struct PendingSettlement {
     pub calls_to_settle: u64,
     pub amount: u64,               // lamports/tokens locked
     pub service_hash: [u8; 32],
+    pub receipt_merkle_root: [u8; 32], // v0.7: links to ReceiptBatch merkle root
     pub created_at: i64,
     pub release_slot: u64,         // slot after which auto-release allowed
     pub is_finalized: bool,
@@ -1110,14 +1182,14 @@ pub struct PendingSettlement {
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  DisputeRecord — On-Chain Dispute with Arbiter Resolution
+//  DisputeRecord — On-Chain Dispute with Auto-Resolution
 //  Seeds: ["sap_dispute", pending_settlement_pda]
 //
 //  Filed by depositor during the dispute window.
-//  Arbiter (set on escrow creation) resolves the dispute.
-//  Resolution outcomes:
-//    - DepositorWins: funds return to escrow balance, agent slashed
-//    - AgentWins: funds transfer to agent wallet
+//  v0.7: No arbiter — resolution is automatic via receipt proofs.
+//  DisputeType determines resolution path:
+//    - NonDelivery/PartialDelivery/Overcharge → auto via receipt proofs
+//    - Quality → auto checks first, then governance/timeout fallback
 // ─────────────────────────────────────────────────────────────────
 
 #[derive(InitSpace)]
@@ -1128,14 +1200,19 @@ pub struct DisputeRecord {
     pub escrow: Pubkey,
     pub depositor: Pubkey,
     pub agent: Pubkey,
-    pub evidence_hash: [u8; 32],    // sha256 of depositor's offchain evidence
+    pub dispute_type: DisputeType,     // v0.7: typed disputes
+    pub evidence_hash: [u8; 32],       // sha256 of depositor's offchain evidence
     pub agent_evidence_hash: [u8; 32], // sha256 of agent's counter-evidence
-    pub arbiter: Pubkey,
     pub outcome: DisputeOutcome,
+    pub resolution_layer: ResolutionLayer, // v0.7: how it was resolved
     pub created_at: i64,
-    pub resolved_at: i64,           // 0 = unresolved
-    pub resolution_hash: [u8; 32],  // sha256 of resolution evidence
-    pub slash_amount: u64,          // slashed from agent stake (if depositor wins)
+    pub resolved_at: i64,              // 0 = unresolved
+    pub resolution_hash: [u8; 32],     // sha256 of resolution evidence
+    pub slash_amount: u64,             // slashed from agent stake (if depositor wins)
+    pub dispute_bond: u64,             // v0.7: 10% bond for Quality disputes
+    pub proven_calls: u32,             // v0.7: calls proven via receipt proof
+    pub claimed_calls: u32,            // v0.7: calls claimed in settlement
+    pub proof_deadline: i64,           // v0.7: unix timestamp — agent must prove by this
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -1164,9 +1241,17 @@ pub struct AgentStake {
 }
 
 impl AgentStake {
-    pub const MIN_STAKE: u64 = 100_000_000;          // 0.1 SOL
-    pub const UNSTAKE_COOLDOWN_SLOTS: u64 = 1_512_000; // ~7 days
-    pub const SLASH_BPS: u64 = 5_000;                 // 50% of dispute amount
+    pub const MIN_STAKE: u64 = 100_000_000;            // 0.1 SOL — permanent floor
+    pub const UNSTAKE_COOLDOWN_SECONDS: i64 = 604_800; // 7 days (was misnamed `_SLOTS` pre-v0.11)
+    /// DEPRECATED — kept for backwards-compatible IDL/clients. Use `UNSTAKE_COOLDOWN_SECONDS`.
+    pub const UNSTAKE_COOLDOWN_SLOTS: u64 = 1_512_000;
+    pub const SLASH_BPS: u64 = 5_000;                  // 50% of dispute amount
+    pub const PROOF_DEADLINE_SECONDS: i64 = 604_800;   // 7 days to submit receipt proof
+    pub const QUALITY_DISPUTE_BOND_BPS: u64 = 1_000;   // 10% bond for quality disputes
+    /// v0.11 H-1: per-escrow stake-coverage ratio. Required stake at create-time
+    /// is `max(MIN_STAKE, escrow_amount * STAKE_COVERAGE_BPS / 10_000)`. Set to
+    /// SLASH_BPS so the slash on a lost dispute is fully collateralised by stake.
+    pub const STAKE_COVERAGE_BPS: u64 = Self::SLASH_BPS;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -1261,6 +1346,52 @@ pub struct IndexPage {
 
 impl IndexPage {
     pub const MAX_ENTRIES: usize = 100;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  v0.10 Hardening — Anti-replay receipt PDA
+//
+//  Created via `init` constraint inside settle_calls / settle_batch /
+//  settle_calls_v2 / create_pending_settlement.  The PDA seeds
+//  embed both the escrow key and the service_hash, so any attempt to
+//  reuse the same `service_hash` against the same escrow fails the
+//  Anchor `init` check (account already exists) — replay impossible.
+//
+//  Seeds:
+//    settle_calls (v1):     ["sap_recv", escrow_pda, service_hash]
+//    settle_calls_v2:       ["sap_recv", escrow_v2_pda, service_hash]
+//    settle_batch:          ["sap_recv", escrow_pda, batch_root]
+//                           (batch_root = sha256 of all service_hashes
+//                            concatenated in batch order)
+//
+//  Cost: ~0.001 SOL per receipt.  Receipts are intentionally NOT
+//  closeable to preserve the replay-protection invariant for the
+//  lifetime of the escrow.  When the escrow is closed the receipts
+//  become orphan PDAs whose seeds are no longer reachable through
+//  any future escrow with that exact key (PDA = f(programId, escrow,
+//  service_hash) — escrow PDA itself is unique per (agent, depositor)).
+// ═══════════════════════════════════════════════════════════════════
+
+#[derive(InitSpace)]
+#[account]
+pub struct SettlementReceipt {
+    pub bump: u8,
+    pub escrow: Pubkey,        // EscrowAccount or EscrowAccountV2 PDA
+    pub service_hash: [u8; 32],// the (or batch_root) settled hash
+    pub calls_settled: u64,    // calls settled by this receipt
+    pub amount: u64,           // payout amount (escrow base unit)
+    pub settled_at: i64,
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  v0.10 Hardening — VaultDelegate expiry policy
+// ═══════════════════════════════════════════════════════════════════
+
+impl VaultDelegate {
+    /// Maximum allowed delegate lifetime measured from now (1 year).
+    /// Enforced at `add_vault_delegate` time only — pre-existing
+    /// delegates with `expires_at = 0` (never) keep working.
+    pub const MAX_DELEGATE_DURATION_SECS: i64 = 365 * 86_400;
 }
 
 
