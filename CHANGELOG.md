@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-06
+
+First official stable release of the Synapse Agent Protocol on Solana.
+
+This release is based on the validated commerce/security cut already deployed
+to devnet and mainnet, promoted to `1.0.0` for the public program, SDK, IDL,
+and release tags.
+
+### Added
+
+- Canonical `1.0.0` IDL metadata for the deployed SAP program.
+- Agent close flow support for returning initialized AgentStake collateral when
+  the agent has no active escrow obligations.
+- Legacy stake recovery support for already-closed agent accounts through the
+  SDK helper path.
+
+### Changed
+
+- Public commerce flows are V2-first: SDK and program artifacts target
+  `escrow_account_v2` for SOL and USDC settlement.
+- `settle_calls_v2` is the canonical settlement path with 5 base accounts:
+  `wallet`, `agent`, `agent_stats`, `escrow`, and `system_program`.
+- `create_pending_settlement` is aligned to the canonical 4-argument IDL shape.
+- Program, root package, SDK package, CLI package, and embedded IDL artifacts
+  are aligned to `1.0.0`.
+
+### Fixed
+
+- Native SOL V2 treasury-fee transfer now signs escrow PDA transfers correctly.
+- USDC/SPL V2 treasury-fee paths validate token account mint and owner before
+  moving funds.
+- Quality dispute bond accounting now pays the winning side and decrements
+  tracked dispute bond totals on resolution.
+- Removed stale V2 receipt arguments (`settlementReceipt`,
+  `receiptMerkleRoot`) from the SDK-facing settlement flow.
+
+### Validation
+
+- Devnet SOL V2 smoke test passed.
+- Devnet USDC V2 smoke test passed.
+- SDK build passed.
+- CLI build passed.
+- SDK smoke tests passed.
+- `npm pack --dry-run` produced `@oobe-protocol-labs/synapse-sap-sdk@1.0.0`
+  and `synapse-sap-cli@1.0.0`.
+- Secret-like scan on release HEADs passed.
+
 ## [0.2.0] — 2026-04-29 — Hardening Release
 
 > **Security & trust release.** All findings from the v0.10 internal audit
@@ -111,5 +158,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - IDL uploaded on-chain at `7m5Zdb3whpZbFDHSbKBEytApWSJuDmykhbyfsD8StBVe`.
 - TypeScript SDK published as `@oobe-protocol-labs/synapse-sap-sdk` on npm.
 
-[Unreleased]: https://github.com/OOBE-PROTOCOL/synapse-agent-sap/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/OOBE-PROTOCOL/synapse-sap/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/OOBE-PROTOCOL/synapse-sap/releases/tag/v1.0.0
 [0.1.0]: https://github.com/OOBE-PROTOCOL/synapse-agent-sap/releases/tag/v0.1.0
