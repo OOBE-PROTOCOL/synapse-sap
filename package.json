@@ -1,6 +1,6 @@
 {
   "name": "synapse-agent-sap",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SAP v2 — Synapse Agent Protocol: On-chain agent identity, reputation & discovery",
   "license": "MIT",
   "scripts": {
