@@ -2,7 +2,7 @@
   "address": "SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ",
   "metadata": {
     "name": "synapse_agent_sap",
-    "version": "0.3.0",
+    "version": "1.0.0",
     "spec": "0.1.0",
     "description": "Created with Anchor"
   },

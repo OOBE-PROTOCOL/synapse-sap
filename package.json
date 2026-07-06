@@ -1,6 +1,6 @@
 {
   "name": "synapse-agent-sap",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "SAP v2 — Synapse Agent Protocol: On-chain agent identity, reputation & discovery",
   "license": "MIT",
   "scripts": {
@@ -8,7 +8,9 @@
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
   },
   "socket": {
-  "ignore": ["network-access"]
+    "ignore": [
+      "network-access"
+    ]
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1"
