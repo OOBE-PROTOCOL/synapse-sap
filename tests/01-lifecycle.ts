@@ -30,8 +30,7 @@ import {
 describe("01 — Agent Lifecycle", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-  const program = anchor.workspace
-    .synapseAgentSap as Program<SynapseAgentSap>;
+  const program = anchor.workspace.synapseAgentSap as Program<SynapseAgentSap>;
   const connection = provider.connection;
 
   // Wallets
@@ -124,7 +123,7 @@ describe("01 — Agent Lifecycle", () => {
         null, // protocols
         null, // agentId
         null, // agentUri
-        null  // x402Endpoint
+        null // x402Endpoint
       )
       .accountsStrict({
         wallet: agentOwner.publicKey,

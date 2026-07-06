@@ -1,9 +1,18 @@
+use crate::errors::SapError;
+use crate::events::*;
+use crate::state::*;
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
 use anchor_lang::solana_program::program::invoke_signed;
-use crate::state::*;
-use crate::events::*;
-use crate::errors::SapError;
+use solana_instructions_sysvar as ix_sysvar;
+use solana_sdk_ids::ed25519_program;
+
+const RECEIPT_SIGNATURE_DOMAIN: &[u8] = b"SAP_RECEIPT_V1";
+const ED25519_SIGNATURE_OFFSETS_START: usize = 2;
+const ED25519_SIGNATURE_OFFSETS_SIZE: usize = 14;
+const ED25519_SIGNATURE_SIZE: usize = 64;
+const ED25519_PUBKEY_SIZE: usize = 32;
+const ED25519_DATA_IN_THIS_INSTRUCTION: u16 = u16::MAX;
 
 // ═══════════════════════════════════════════════════════════════════
 //  RECEIPT BATCH — Cryptographic Proof of Service Delivery
@@ -89,7 +98,8 @@ pub fn inscribe_receipt_batch_handler(
 
     // Increment batch counter
     let escrow = &mut ctx.accounts.escrow;
-    escrow.receipt_batch_count = escrow.receipt_batch_count
+    escrow.receipt_batch_count = escrow
+        .receipt_batch_count
         .checked_add(1)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
 
@@ -179,32 +189,71 @@ pub fn submit_receipt_proof_handler(
         receipt_hashes.len() == merkle_proofs.len(),
         SapError::InvalidReceiptProof
     );
+    require!(!receipt_hashes.is_empty(), SapError::InvalidReceiptProof);
     // v0.13: prevent CU exhaustion via unbounded receipt proofs
     require!(
         receipt_hashes.len() <= EscrowAccountV2::MAX_RECEIPT_PROOFS,
         SapError::MaxReceiptProofExceeded
     );
+    require!(
+        ctx.accounts.dispute.proven_calls == 0,
+        SapError::ReceiptProofAlreadySubmitted
+    );
 
     let merkle_root = ctx.accounts.receipt_batch.merkle_root;
     let mut verified_count: u32 = 0;
+    let instructions_sysvar = find_instructions_sysvar(ctx.remaining_accounts)?;
+    let current_ix = ix_sysvar::load_current_index_checked(instructions_sysvar)?;
 
     // Verify each receipt's merkle inclusion
     for (i, receipt_hash) in receipt_hashes.iter().enumerate() {
+        for prior_hash in receipt_hashes.iter().take(i) {
+            require!(prior_hash != receipt_hash, SapError::DuplicateReceiptProof);
+        }
+
         let proof = &merkle_proofs[i];
         require!(
             proof.len() <= EscrowAccountV2::MAX_MERKLE_DEPTH,
             SapError::MaxMerkleDepthExceeded
         );
-        if verify_merkle_proof(receipt_hash, proof, &merkle_root) {
-            verified_count += 1;
-        }
+        require!(
+            verify_merkle_proof(receipt_hash, proof, &merkle_root),
+            SapError::InvalidReceiptProof
+        );
+
+        let message = build_receipt_signature_message(
+            &ctx.accounts.escrow.key(),
+            &ctx.accounts.pending_settlement.key(),
+            &ctx.accounts.dispute.key(),
+            receipt_hash,
+        );
+        require!(
+            has_verified_ed25519_signature_before(
+                instructions_sysvar,
+                current_ix,
+                &ctx.accounts.escrow.depositor,
+                &message,
+            )?,
+            SapError::MissingReceiptSignature
+        );
+        require!(
+            has_verified_ed25519_signature_before(
+                instructions_sysvar,
+                current_ix,
+                &ctx.accounts.escrow.agent_wallet,
+                &message,
+            )?,
+            SapError::MissingReceiptSignature
+        );
+
+        verified_count = verified_count
+            .checked_add(1)
+            .ok_or(error!(SapError::ArithmeticOverflow))?;
     }
 
     // Update dispute with proven calls
     let dispute = &mut ctx.accounts.dispute;
-    dispute.proven_calls = dispute.proven_calls
-        .checked_add(verified_count)
-        .ok_or(error!(SapError::ArithmeticOverflow))?;
+    dispute.proven_calls = verified_count.min(dispute.claimed_calls);
 
     emit!(ReceiptProofSubmittedEvent {
         dispute: dispute.key(),
@@ -315,32 +364,13 @@ pub fn auto_resolve_dispute_handler<'info>(
     let amount = ctx.accounts.pending_settlement.amount;
     let calls = ctx.accounts.pending_settlement.calls_to_settle;
 
-    // Determine outcome
-    let (outcome, agent_amount, depositor_amount) = if proven >= claimed && claimed > 0 {
-        // Agent proved all calls → agent wins
-        (DisputeOutcome::AgentWins, amount, 0u64)
-    } else if proven == 0 && deadline_passed {
-        // No proof and deadline passed → depositor wins
-        (DisputeOutcome::DepositorWins, 0u64, amount)
-    } else if proven > 0 && (proven < claimed || deadline_passed) {
-        // Partial proof → proportional refund
-        let agent_share = (amount as u128)
-            .checked_mul(proven as u128)
-            .ok_or(error!(SapError::ArithmeticOverflow))?
-            .checked_div(claimed as u128)
-            .ok_or(error!(SapError::ArithmeticOverflow))? as u64;
-        let depositor_share = amount.checked_sub(agent_share)
-            .ok_or(error!(SapError::ArithmeticOverflow))?;
-        (DisputeOutcome::PartialRefund, agent_share, depositor_share)
-    } else if ctx.accounts.dispute.dispute_type == DisputeType::Quality && deadline_passed {
-        // Quality dispute, no conclusive auto-check → 50/50 split
-        let half = amount / 2;
-        let remainder = amount - half;
-        (DisputeOutcome::Split, half, remainder)
-    } else {
-        // Deadline not passed yet, can't resolve — agent still has time
-        return Err(error!(SapError::ProofDeadlineNotExpired));
-    };
+    let (outcome, agent_amount, depositor_amount) = determine_dispute_resolution(
+        ctx.accounts.dispute.dispute_type,
+        proven,
+        claimed,
+        deadline_passed,
+        amount,
+    )?;
 
     // Transfer funds
     let escrow_info = ctx.accounts.escrow.to_account_info();
@@ -362,6 +392,7 @@ pub fn auto_resolve_dispute_handler<'info>(
                 ctx.accounts.escrow.bump,
                 agent_amount,
                 ctx.accounts.escrow.token_mint,
+                Some(ctx.accounts.escrow.agent_wallet),
             )?;
         } else {
             **escrow_info.try_borrow_mut_lamports()? -= agent_amount;
@@ -384,6 +415,7 @@ pub fn auto_resolve_dispute_handler<'info>(
                 ctx.accounts.escrow.bump,
                 depositor_amount,
                 ctx.accounts.escrow.token_mint,
+                Some(ctx.accounts.escrow.depositor),
             )?;
         } else {
             **escrow_info.try_borrow_mut_lamports()? -= depositor_amount;
@@ -393,18 +425,37 @@ pub fn auto_resolve_dispute_handler<'info>(
 
     // Update escrow
     let escrow = &mut ctx.accounts.escrow;
-    escrow.balance = escrow.balance.checked_sub(amount).ok_or(error!(SapError::ArithmeticOverflow))?;
-    escrow.pending_amount = escrow.pending_amount.checked_sub(amount).ok_or(error!(SapError::ArithmeticOverflow))?;
-    escrow.pending_calls = escrow.pending_calls.checked_sub(calls).ok_or(error!(SapError::ArithmeticOverflow))?;
+    escrow.balance = escrow
+        .balance
+        .checked_sub(amount)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
+    escrow.pending_amount = escrow
+        .pending_amount
+        .checked_sub(amount)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
+    escrow.pending_calls = escrow
+        .pending_calls
+        .checked_sub(calls)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
+    escrow.pending_settlement_count = escrow.pending_settlement_count.saturating_sub(1);
 
     if agent_amount > 0 {
-        escrow.total_settled = escrow.total_settled.checked_add(agent_amount).ok_or(error!(SapError::ArithmeticOverflow))?;
+        escrow.total_settled = escrow
+            .total_settled
+            .checked_add(agent_amount)
+            .ok_or(error!(SapError::ArithmeticOverflow))?;
         let proven_calls_u64 = proven as u64;
-        escrow.total_calls_settled = escrow.total_calls_settled.checked_add(proven_calls_u64.min(calls)).ok_or(error!(SapError::ArithmeticOverflow))?;
+        escrow.total_calls_settled = escrow
+            .total_calls_settled
+            .checked_add(proven_calls_u64.min(calls))
+            .ok_or(error!(SapError::ArithmeticOverflow))?;
         escrow.last_settled_at = clock.unix_timestamp;
 
         let stats = &mut ctx.accounts.agent_stats;
-        stats.total_calls_served = stats.total_calls_served.checked_add(proven_calls_u64.min(calls)).ok_or(error!(SapError::ArithmeticOverflow))?;
+        stats.total_calls_served = stats
+            .total_calls_served
+            .checked_add(proven_calls_u64.min(calls))
+            .ok_or(error!(SapError::ArithmeticOverflow))?;
         stats.updated_at = clock.unix_timestamp;
     }
 
@@ -424,14 +475,14 @@ pub fn auto_resolve_dispute_handler<'info>(
     // Return dispute bond (if Quality dispute)
     if ctx.accounts.dispute.dispute_bond > 0 {
         let bond = ctx.accounts.dispute.dispute_bond;
-        // Bond goes back to depositor (they paid it)
-        if outcome != DisputeOutcome::AgentWins {
-            // Depositor gets bond back (they were right or partially right)
-            // Bond was deposited into escrow PDA, return it
-            **escrow_info.try_borrow_mut_lamports()? -= bond;
+        **escrow_info.try_borrow_mut_lamports()? -= bond;
+        if outcome == DisputeOutcome::AgentWins {
+            **wallet_info.try_borrow_mut_lamports()? += bond;
+        } else {
             **depositor_info.try_borrow_mut_lamports()? += bond;
         }
-        // If AgentWins, bond stays as compensation (already in escrow)
+        ctx.accounts.escrow.dispute_bond_total =
+            ctx.accounts.escrow.dispute_bond_total.saturating_sub(bond);
     }
 
     // Finalize
@@ -486,6 +537,238 @@ fn hash_pair(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
     hashv(&[a, b]).to_bytes()
 }
 
+fn determine_dispute_resolution(
+    dispute_type: DisputeType,
+    proven: u32,
+    claimed: u32,
+    deadline_passed: bool,
+    amount: u64,
+) -> Result<(DisputeOutcome, u64, u64)> {
+    if dispute_type == DisputeType::Quality {
+        if proven >= claimed && claimed > 0 {
+            return Ok((DisputeOutcome::AgentWins, amount, 0));
+        }
+        if deadline_passed {
+            let half = amount / 2;
+            return Ok((DisputeOutcome::Split, half, amount - half));
+        }
+        return Err(error!(SapError::ProofDeadlineNotExpired));
+    }
+
+    if proven >= claimed && claimed > 0 {
+        return Ok((DisputeOutcome::AgentWins, amount, 0));
+    }
+    if proven == 0 && deadline_passed {
+        return Ok((DisputeOutcome::DepositorWins, 0, amount));
+    }
+    if proven > 0 && (proven < claimed || deadline_passed) {
+        let agent_share = (amount as u128)
+            .checked_mul(proven as u128)
+            .ok_or(error!(SapError::ArithmeticOverflow))?
+            .checked_div(claimed as u128)
+            .ok_or(error!(SapError::ArithmeticOverflow))? as u64;
+        let depositor_share = amount
+            .checked_sub(agent_share)
+            .ok_or(error!(SapError::ArithmeticOverflow))?;
+        return Ok((DisputeOutcome::PartialRefund, agent_share, depositor_share));
+    }
+
+    Err(error!(SapError::ProofDeadlineNotExpired))
+}
+
+fn build_receipt_signature_message(
+    escrow: &Pubkey,
+    pending_settlement: &Pubkey,
+    dispute: &Pubkey,
+    receipt_hash: &[u8; 32],
+) -> Vec<u8> {
+    let mut message = Vec::with_capacity(RECEIPT_SIGNATURE_DOMAIN.len() + 32 + 32 + 32 + 32 + 32);
+    message.extend_from_slice(RECEIPT_SIGNATURE_DOMAIN);
+    message.extend_from_slice(crate::ID.as_ref());
+    message.extend_from_slice(escrow.as_ref());
+    message.extend_from_slice(pending_settlement.as_ref());
+    message.extend_from_slice(dispute.as_ref());
+    message.extend_from_slice(receipt_hash);
+    message
+}
+
+fn has_verified_ed25519_signature_before(
+    instructions_sysvar: &AccountInfo,
+    current_ix: u16,
+    signer: &Pubkey,
+    message: &[u8],
+) -> Result<bool> {
+    for ix_index in 0..current_ix {
+        let ix = ix_sysvar::load_instruction_at_checked(ix_index as usize, instructions_sysvar)?;
+        if ed25519_instruction_contains(&ix, signer.as_ref(), message)? {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn find_instructions_sysvar<'info>(
+    remaining_accounts: &'info [AccountInfo<'info>],
+) -> Result<&'info AccountInfo<'info>> {
+    remaining_accounts
+        .iter()
+        .find(|account| account.key.as_ref() == ix_sysvar::ID.as_ref())
+        .ok_or(error!(SapError::MissingReceiptSignature))
+}
+
+fn ed25519_instruction_contains(ix: &Instruction, signer: &[u8], message: &[u8]) -> Result<bool> {
+    if ix.program_id != ed25519_program::ID {
+        return Ok(false);
+    }
+    let data = ix.data.as_slice();
+    require!(
+        data.len() >= ED25519_SIGNATURE_OFFSETS_START,
+        SapError::InvalidReceiptProof
+    );
+
+    let sig_count = data[0] as usize;
+    for sig_index in 0..sig_count {
+        let offset = ED25519_SIGNATURE_OFFSETS_START
+            .checked_add(
+                sig_index
+                    .checked_mul(ED25519_SIGNATURE_OFFSETS_SIZE)
+                    .ok_or(error!(SapError::ArithmeticOverflow))?,
+            )
+            .ok_or(error!(SapError::ArithmeticOverflow))?;
+        require!(
+            data.len() >= offset + ED25519_SIGNATURE_OFFSETS_SIZE,
+            SapError::InvalidReceiptProof
+        );
+
+        let signature_offset = read_u16(data, offset)? as usize;
+        let signature_instruction_index = read_u16(data, offset + 2)?;
+        let public_key_offset = read_u16(data, offset + 4)? as usize;
+        let public_key_instruction_index = read_u16(data, offset + 6)?;
+        let message_offset = read_u16(data, offset + 8)? as usize;
+        let message_size = read_u16(data, offset + 10)? as usize;
+        let message_instruction_index = read_u16(data, offset + 12)?;
+
+        if signature_instruction_index != ED25519_DATA_IN_THIS_INSTRUCTION
+            || public_key_instruction_index != ED25519_DATA_IN_THIS_INSTRUCTION
+            || message_instruction_index != ED25519_DATA_IN_THIS_INSTRUCTION
+        {
+            continue;
+        }
+
+        require!(
+            signature_offset
+                .checked_add(ED25519_SIGNATURE_SIZE)
+                .map(|end| end <= data.len())
+                .unwrap_or(false),
+            SapError::InvalidReceiptProof
+        );
+        require!(
+            public_key_offset
+                .checked_add(ED25519_PUBKEY_SIZE)
+                .map(|end| end <= data.len())
+                .unwrap_or(false),
+            SapError::InvalidReceiptProof
+        );
+        require!(
+            message_offset
+                .checked_add(message_size)
+                .map(|end| end <= data.len())
+                .unwrap_or(false),
+            SapError::InvalidReceiptProof
+        );
+
+        let public_key = &data[public_key_offset..public_key_offset + ED25519_PUBKEY_SIZE];
+        let signed_message = &data[message_offset..message_offset + message_size];
+        if public_key == signer && signed_message == message {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn read_u16(data: &[u8], offset: usize) -> Result<u16> {
+    let end = offset
+        .checked_add(2)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
+    require!(end <= data.len(), SapError::InvalidReceiptProof);
+    Ok(u16::from_le_bytes([data[offset], data[offset + 1]]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fake_ed25519_instruction(pubkey: Pubkey, message: &[u8]) -> Instruction {
+        let signature_offset = 16u16;
+        let public_key_offset = signature_offset + ED25519_SIGNATURE_SIZE as u16;
+        let message_offset = public_key_offset + ED25519_PUBKEY_SIZE as u16;
+
+        let mut data = Vec::new();
+        data.push(1);
+        data.push(0);
+        data.extend_from_slice(&signature_offset.to_le_bytes());
+        data.extend_from_slice(&ED25519_DATA_IN_THIS_INSTRUCTION.to_le_bytes());
+        data.extend_from_slice(&public_key_offset.to_le_bytes());
+        data.extend_from_slice(&ED25519_DATA_IN_THIS_INSTRUCTION.to_le_bytes());
+        data.extend_from_slice(&message_offset.to_le_bytes());
+        data.extend_from_slice(&(message.len() as u16).to_le_bytes());
+        data.extend_from_slice(&ED25519_DATA_IN_THIS_INSTRUCTION.to_le_bytes());
+        data.extend_from_slice(&[7u8; ED25519_SIGNATURE_SIZE]);
+        data.extend_from_slice(pubkey.as_ref());
+        data.extend_from_slice(message);
+
+        Instruction {
+            program_id: ed25519_program::ID,
+            accounts: vec![],
+            data,
+        }
+    }
+
+    #[test]
+    fn receipt_signature_message_is_domain_separated() {
+        let escrow = Pubkey::new_unique();
+        let pending = Pubkey::new_unique();
+        let dispute = Pubkey::new_unique();
+        let receipt_hash = [9u8; 32];
+
+        let message = build_receipt_signature_message(&escrow, &pending, &dispute, &receipt_hash);
+
+        assert!(message.starts_with(RECEIPT_SIGNATURE_DOMAIN));
+        assert!(message
+            .windows(32)
+            .any(|window| window == crate::ID.as_ref()));
+        assert!(message.windows(32).any(|window| window == escrow.as_ref()));
+        assert!(message.windows(32).any(|window| window == pending.as_ref()));
+        assert!(message.windows(32).any(|window| window == dispute.as_ref()));
+        assert!(message.ends_with(&receipt_hash));
+    }
+
+    #[test]
+    fn ed25519_parser_matches_expected_signer_and_message() {
+        let signer = Pubkey::new_unique();
+        let message = b"sap receipt message";
+        let ix = fake_ed25519_instruction(signer, message);
+
+        assert!(ed25519_instruction_contains(&ix, signer.as_ref(), message).unwrap());
+        assert!(
+            !ed25519_instruction_contains(&ix, Pubkey::new_unique().as_ref(), message).unwrap()
+        );
+        assert!(!ed25519_instruction_contains(&ix, signer.as_ref(), b"other").unwrap());
+    }
+
+    #[test]
+    fn quality_dispute_splits_after_deadline_before_generic_refund_paths() {
+        let (outcome, agent_amount, depositor_amount) =
+            determine_dispute_resolution(DisputeType::Quality, 3, 10, true, 101).unwrap();
+
+        assert!(outcome == DisputeOutcome::Split);
+        assert_eq!(agent_amount, 50);
+        assert_eq!(depositor_amount, 51);
+    }
+}
+
 /// v0.12 fix: Safe SPL transfer from escrow to a SPECIFIC destination token account.
 /// Caller passes source escrow ATA, dest ATA, and token program explicitly.
 /// This replaces the fixed-remaining[] helper so both agent and depositor
@@ -501,15 +784,28 @@ fn spl_transfer_from_escrow_to_account<'info>(
     escrow_bump: u8,
     amount: u64,
     expected_mint: Option<Pubkey>,
+    expected_dest_owner: Option<Pubkey>,
 ) -> Result<()> {
-    if let Some(mint) = expected_mint {
-        let data = escrow_token.try_borrow_data()?;
-        require!(data.len() >= 32, SapError::InvalidTokenAccount);
-        let source_mint = Pubkey::try_from(&data[..32]).map_err(|_| error!(SapError::InvalidTokenAccount))?;
-        require!(source_mint == mint, SapError::InvalidTokenAccount);
-    }
-
-    require!(super::escrow_v2::is_spl_token_program(token_program.key), SapError::InvalidTokenProgram);
+    require!(
+        super::escrow_v2::is_spl_token_program(token_program.key),
+        SapError::InvalidTokenProgram
+    );
+    require!(
+        escrow_token.key() != dest_token.key(),
+        SapError::InvalidTokenAccount
+    );
+    super::escrow_v2::validate_token_account(
+        escrow_token,
+        expected_mint,
+        Some(*escrow_info.key),
+        token_program,
+    )?;
+    super::escrow_v2::validate_token_account(
+        dest_token,
+        expected_mint,
+        expected_dest_owner,
+        token_program,
+    )?;
 
     let mut data = Vec::with_capacity(9);
     data.push(3u8);

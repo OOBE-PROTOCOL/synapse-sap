@@ -1,5 +1,5 @@
-use anchor_lang::prelude::*;
 use crate::state::GlobalRegistry;
+use anchor_lang::prelude::*;
 
 /// Initialize the global SAP registry singleton.
 /// Called once during program deployment.

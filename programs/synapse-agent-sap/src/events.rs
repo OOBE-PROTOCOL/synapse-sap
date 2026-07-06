@@ -261,10 +261,10 @@ pub struct ToolSchemaInscribedEvent {
     pub agent: Pubkey,
     pub tool: Pubkey,
     pub tool_name: String,
-    pub schema_type: u8,           // 0=input, 1=output, 2=description
-    pub schema_data: Vec<u8>,      // full JSON schema (optionally compressed)
-    pub schema_hash: [u8; 32],     // sha256 of uncompressed schema
-    pub compression: u8,           // 0=none, 1=deflate
+    pub schema_type: u8,       // 0=input, 1=output, 2=description
+    pub schema_data: Vec<u8>,  // full JSON schema (optionally compressed)
+    pub schema_hash: [u8; 32], // sha256 of uncompressed schema
+    pub compression: u8,       // 0=none, 1=deflate
     pub version: u16,
     pub timestamp: i64,
 }
@@ -549,7 +549,7 @@ pub struct EscrowV2CreatedEvent {
     pub price_per_call: u64,
     pub max_calls: u64,
     pub initial_deposit: u64,
-    pub settlement_security: u8,  // 0=SelfReport, 1=CoSigned, 2=DisputeWindow
+    pub settlement_security: u8, // 0=SelfReport, 1=CoSigned, 2=DisputeWindow
     pub dispute_window_slots: u64,
     pub co_signer: Option<Pubkey>,
     pub arbiter: Option<Pubkey>,
@@ -620,7 +620,7 @@ pub struct DisputeResolvedEvent {
     pub dispute: Pubkey,
     pub pending_settlement: Pubkey,
     pub escrow: Pubkey,
-    pub outcome: u8,              // 1=DepositorWins, 2=AgentWins
+    pub outcome: u8, // 1=DepositorWins, 2=AgentWins
     pub slash_amount: u64,
     pub resolution_hash: [u8; 32],
     pub timestamp: i64,
@@ -702,7 +702,7 @@ pub struct SubscriptionCreatedEvent {
     pub subscriber: Pubkey,
     pub sub_id: u64,
     pub price_per_interval: u64,
-    pub billing_interval: u8,     // 0=Daily, 1=Weekly, 2=Monthly
+    pub billing_interval: u8, // 0=Daily, 1=Weekly, 2=Monthly
     pub initial_deposit: u64,
     pub timestamp: i64,
 }

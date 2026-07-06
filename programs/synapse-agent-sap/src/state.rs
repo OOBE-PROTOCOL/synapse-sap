@@ -36,8 +36,7 @@ pub enum TokenType {
 /// Settlement security level — determines how settle_calls is authorized.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, InitSpace)]
 pub enum SettlementSecurity {
-    /// DEPRECATED: Agent self-reports (v0.6 legacy, kept for deserialization compat)
-    #[deprecated(note = "SelfReport removed in v0.7 — use CoSigned or DisputeWindow")]
+    /// Legacy discriminant kept only for deserialization compatibility.
     SelfReport,
     /// Client co-signs every settlement TX
     CoSigned,
@@ -228,7 +227,7 @@ pub struct AgentAccount {
     #[max_len(256)]
     pub description: String,
     #[max_len(128)]
-    pub agent_id: Option<String>,       // DID-style identifier
+    pub agent_id: Option<String>, // DID-style identifier
     #[max_len(256)]
     pub agent_uri: Option<String>,
     #[max_len(256)]
@@ -238,13 +237,13 @@ pub struct AgentAccount {
     pub updated_at: i64,
 
     // ── Reputation (computed onchain, NOT user-settable) ──
-    pub reputation_score: u32,   // 0-10000 (2 decimal precision)
+    pub reputation_score: u32, // 0-10000 (2 decimal precision)
     pub total_feedbacks: u32,
-    pub reputation_sum: u64,     // sum of active feedback scores (for incremental calc)
+    pub reputation_sum: u64, // sum of active feedback scores (for incremental calc)
     /// DEPRECATED: use AgentStats.total_calls_served (hot-path PDA)
     pub total_calls_served: u64,
-    pub avg_latency_ms: u32,    // average response latency (self-reported)
-    pub uptime_percent: u8,     // 0-100 (self-reported)
+    pub avg_latency_ms: u32, // average response latency (self-reported)
+    pub uptime_percent: u8,  // 0-100 (self-reported)
 
     // ── Dynamic Fields ──
     #[max_len(10)]
@@ -279,12 +278,12 @@ impl AgentAccount {
 #[account]
 pub struct FeedbackAccount {
     pub bump: u8,
-    pub agent: Pubkey,       // the agent PDA this feedback targets
-    pub reviewer: Pubkey,    // the wallet that left the feedback
-    pub score: u16,          // 0-1000
+    pub agent: Pubkey,    // the agent PDA this feedback targets
+    pub reviewer: Pubkey, // the wallet that left the feedback
+    pub score: u16,       // 0-1000
     #[max_len(32)]
-    pub tag: String,         // e.g. "quality", "speed", "reliability"
-    pub comment_hash: Option<[u8; 32]>,  // SHA-256 of IPFS comment
+    pub tag: String, // e.g. "quality", "speed", "reliability"
+    pub comment_hash: Option<[u8; 32]>, // SHA-256 of IPFS comment
     pub created_at: i64,
     pub updated_at: i64,
     pub is_revoked: bool,
@@ -307,8 +306,8 @@ pub struct CapabilityIndex {
     pub capability_id: String,
     pub capability_hash: [u8; 32],
     #[max_len(100)]
-    pub agents: Vec<Pubkey>,      // agent PDAs with this capability
-    pub total_pages: u8,          // for overflow pagination
+    pub agents: Vec<Pubkey>, // agent PDAs with this capability
+    pub total_pages: u8, // for overflow pagination
     pub last_updated: i64,
 }
 
@@ -442,15 +441,15 @@ impl MemoryChunk {
 #[account]
 pub struct MemoryVault {
     pub bump: u8,
-    pub agent: Pubkey,            // the AgentAccount PDA
-    pub wallet: Pubkey,           // owner wallet (for auth chain)
-    pub vault_nonce: [u8; 32],    // random salt for PBKDF2 key derivation (public)
+    pub agent: Pubkey,         // the AgentAccount PDA
+    pub wallet: Pubkey,        // owner wallet (for auth chain)
+    pub vault_nonce: [u8; 32], // random salt for PBKDF2 key derivation (public)
     pub total_sessions: u32,
     pub total_inscriptions: u64,
     pub total_bytes_inscribed: u64,
     pub created_at: i64,
-    pub protocol_version: u8,     // protocol version for event format compat (v1)
-    pub nonce_version: u32,       // increments on each nonce rotation (0 = original)
+    pub protocol_version: u8, // protocol version for event format compat (v1)
+    pub nonce_version: u32,   // increments on each nonce rotation (0 = original)
     pub last_nonce_rotation: i64, // timestamp of last rotation (0 = never)
 }
 
@@ -475,12 +474,12 @@ impl MemoryVault {
 #[account]
 pub struct SessionLedger {
     pub bump: u8,
-    pub vault: Pubkey,            // reference to MemoryVault PDA
-    pub session_hash: [u8; 32],   // SHA-256 of session identifier
-    pub sequence_counter: u32,    // next expected sequence number (4B max)
-    pub total_bytes: u64,         // cumulative encrypted bytes (u64 for GB+)
-    pub current_epoch: u32,       // current epoch index
-    pub total_epochs: u32,        // how many epochs have been created
+    pub vault: Pubkey,          // reference to MemoryVault PDA
+    pub session_hash: [u8; 32], // SHA-256 of session identifier
+    pub sequence_counter: u32,  // next expected sequence number (4B max)
+    pub total_bytes: u64,       // cumulative encrypted bytes (u64 for GB+)
+    pub current_epoch: u32,     // current epoch index
+    pub total_epochs: u32,      // how many epochs have been created
     pub created_at: i64,
     pub last_inscribed_at: i64,
     pub is_closed: bool,
@@ -515,16 +514,14 @@ impl SessionLedger {
 #[account]
 pub struct EpochPage {
     pub bump: u8,
-    pub session: Pubkey,          // parent SessionLedger PDA
-    pub epoch_index: u32,          // 0, 1, 2, ...
-    pub start_sequence: u32,       // first sequence in this epoch
-    pub inscription_count: u16,    // inscriptions written in this epoch
-    pub total_bytes: u32,          // bytes inscribed in this epoch
-    pub first_ts: i64,             // timestamp of first inscription
-    pub last_ts: i64,              // timestamp of last inscription
+    pub session: Pubkey,        // parent SessionLedger PDA
+    pub epoch_index: u32,       // 0, 1, 2, ...
+    pub start_sequence: u32,    // first sequence in this epoch
+    pub inscription_count: u16, // inscriptions written in this epoch
+    pub total_bytes: u32,       // bytes inscribed in this epoch
+    pub first_ts: i64,          // timestamp of first inscription
+    pub last_ts: i64,           // timestamp of last inscription
 }
-
-
 
 // ═══════════════════════════════════════════════════════════════════
 //  Account: VaultDelegate (Hot Wallet Authorization)
@@ -542,18 +539,18 @@ pub struct EpochPage {
 #[account]
 pub struct VaultDelegate {
     pub bump: u8,
-    pub vault: Pubkey,            // parent MemoryVault PDA
-    pub delegate: Pubkey,         // authorized hot wallet pubkey
-    pub permissions: u8,          // bitmask of allowed operations
-    pub expires_at: i64,          // 0 = never expires
+    pub vault: Pubkey,    // parent MemoryVault PDA
+    pub delegate: Pubkey, // authorized hot wallet pubkey
+    pub permissions: u8,  // bitmask of allowed operations
+    pub expires_at: i64,  // 0 = never expires
     pub created_at: i64,
 }
 
 impl VaultDelegate {
-    pub const PERMISSION_INSCRIBE: u8      = 1;
+    pub const PERMISSION_INSCRIBE: u8 = 1;
     pub const PERMISSION_CLOSE_SESSION: u8 = 2;
-    pub const PERMISSION_OPEN_SESSION: u8  = 4;
-    pub const ALL_PERMISSIONS: u8          = 7;
+    pub const PERMISSION_OPEN_SESSION: u8 = 4;
+    pub const ALL_PERMISSIONS: u8 = 7;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -599,16 +596,16 @@ impl ToolHttpMethod {
 /// Tool category for discovery filtering.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, InitSpace)]
 pub enum ToolCategory {
-    Swap,        // 0 — token swaps
-    Lend,        // 1 — lending/borrowing
-    Stake,       // 2 — staking/validator
-    Nft,         // 3 — NFT mint/trade
-    Payment,     // 4 — payments/transfers
-    Data,        // 5 — data queries/feeds
-    Governance,  // 6 — DAO/voting
-    Bridge,      // 7 — cross-chain
-    Analytics,   // 8 — onchain analytics
-    Custom,      // 9 — uncategorized
+    Swap,       // 0 — token swaps
+    Lend,       // 1 — lending/borrowing
+    Stake,      // 2 — staking/validator
+    Nft,        // 3 — NFT mint/trade
+    Payment,    // 4 — payments/transfers
+    Data,       // 5 — data queries/feeds
+    Governance, // 6 — DAO/voting
+    Bridge,     // 7 — cross-chain
+    Analytics,  // 8 — onchain analytics
+    Custom,     // 9 — uncategorized
 }
 
 impl ToolCategory {
@@ -633,25 +630,25 @@ impl ToolCategory {
 #[account]
 pub struct ToolDescriptor {
     pub bump: u8,
-    pub agent: Pubkey,                 // parent AgentAccount PDA
-    pub tool_name_hash: [u8; 32],      // sha256(tool_name) — used in PDA seed
+    pub agent: Pubkey,            // parent AgentAccount PDA
+    pub tool_name_hash: [u8; 32], // sha256(tool_name) — used in PDA seed
     #[max_len(32)]
-    pub tool_name: String,             // e.g. "getQuote", "smartSwap" (max 32)
-    pub protocol_hash: [u8; 32],       // sha256(protocol_id) — links to ProtocolIndex
-    pub version: u16,                  // schema version (1, 2, 3, ...)
-    pub description_hash: [u8; 32],    // sha256 of full tool description
-    pub input_schema_hash: [u8; 32],   // sha256 of input JSON schema
-    pub output_schema_hash: [u8; 32],  // sha256 of output JSON schema
-    pub http_method: ToolHttpMethod,   // GET, POST, PUT, DELETE, Compound
-    pub category: ToolCategory,        // Swap, Lend, Data, etc.
-    pub params_count: u8,              // total input parameters
-    pub required_params: u8,           // required input parameters
-    pub is_compound: bool,             // chains multiple calls (e.g. smartSwap)
-    pub is_active: bool,               // can be deactivated without closing
-    pub total_invocations: u64,        // call counter for analytics
+    pub tool_name: String, // e.g. "getQuote", "smartSwap" (max 32)
+    pub protocol_hash: [u8; 32],  // sha256(protocol_id) — links to ProtocolIndex
+    pub version: u16,             // schema version (1, 2, 3, ...)
+    pub description_hash: [u8; 32], // sha256 of full tool description
+    pub input_schema_hash: [u8; 32], // sha256 of input JSON schema
+    pub output_schema_hash: [u8; 32], // sha256 of output JSON schema
+    pub http_method: ToolHttpMethod, // GET, POST, PUT, DELETE, Compound
+    pub category: ToolCategory,   // Swap, Lend, Data, etc.
+    pub params_count: u8,         // total input parameters
+    pub required_params: u8,      // required input parameters
+    pub is_compound: bool,        // chains multiple calls (e.g. smartSwap)
+    pub is_active: bool,          // can be deactivated without closing
+    pub total_invocations: u64,   // call counter for analytics
     pub created_at: i64,
     pub updated_at: i64,
-    pub previous_version: Pubkey,      // Pubkey::default() if first version
+    pub previous_version: Pubkey, // Pubkey::default() if first version
 }
 
 impl ToolDescriptor {
@@ -673,16 +670,15 @@ impl ToolDescriptor {
 #[account]
 pub struct SessionCheckpoint {
     pub bump: u8,
-    pub session: Pubkey,            // parent SessionLedger PDA
-    pub checkpoint_index: u32,      // 0, 1, 2, ...
-    pub merkle_root: [u8; 32],      // merkle accumulator root at this point
-    pub sequence_at: u32,           // sequence_counter at checkpoint
-    pub epoch_at: u32,              // current_epoch at checkpoint
-    pub total_bytes_at: u64,        // cumulative bytes at checkpoint
-    pub inscriptions_at: u64,       // total inscriptions up to this point
+    pub session: Pubkey,       // parent SessionLedger PDA
+    pub checkpoint_index: u32, // 0, 1, 2, ...
+    pub merkle_root: [u8; 32], // merkle accumulator root at this point
+    pub sequence_at: u32,      // sequence_counter at checkpoint
+    pub epoch_at: u32,         // current_epoch at checkpoint
+    pub total_bytes_at: u64,   // cumulative bytes at checkpoint
+    pub inscriptions_at: u64,  // total inscriptions up to this point
     pub created_at: i64,
 }
-
 
 // ═══════════════════════════════════════════════════════════════════
 //  Account: AgentPricingMenu (On-Chain Pricing Validation)
@@ -701,7 +697,7 @@ pub struct SessionCheckpoint {
 #[account]
 pub struct AgentPricingMenu {
     pub bump: u8,
-    pub agent: Pubkey,            // the AgentAccount PDA
+    pub agent: Pubkey, // the AgentAccount PDA
     /// Copy of AgentAccount pricing at creation time.
     /// Max 10 tiers — enough for typical SaaS ladder.
     #[max_len(10)]
@@ -710,11 +706,20 @@ pub struct AgentPricingMenu {
 }
 
 impl AgentPricingMenu {
-    /// Returns true if at least one tier is USDC and price matches.
-    pub fn validate_usdc_price(&self, price_per_call: u64) -> bool {
-        self.tiers
-            .iter()
-            .any(|t| t.price_per_call == price_per_call && t.token_type == TokenType::Usdc)
+    /// Returns true if a published tier matches the payment rail and price.
+    pub fn validate_price(&self, token_mint: &Option<Pubkey>, price_per_call: u64) -> bool {
+        self.tiers.iter().any(|t| {
+            if t.price_per_call != price_per_call {
+                return false;
+            }
+
+            match (token_mint, t.token_type) {
+                (None, TokenType::Sol) => true,
+                (Some(mint), TokenType::Usdc) => is_accepted_usdc_mint(mint),
+                (Some(mint), TokenType::Spl) => t.token_mint == Some(*mint),
+                _ => false,
+            }
+        })
     }
 }
 
@@ -737,10 +742,10 @@ impl AgentPricingMenu {
 #[account]
 pub struct AgentStats {
     pub bump: u8,
-    pub agent: Pubkey,            // the AgentAccount PDA
-    pub wallet: Pubkey,           // owner wallet (for auth chain)
-    pub total_calls_served: u64,  // authoritative call counter
-    pub is_active: bool,          // mirrored from AgentAccount
+    pub agent: Pubkey,           // the AgentAccount PDA
+    pub wallet: Pubkey,          // owner wallet (for auth chain)
+    pub total_calls_served: u64, // authoritative call counter
+    pub is_active: bool,         // mirrored from AgentAccount
     /// v0.12 H-1 hardening: counter of open escrows for this agent.
     /// Incremented on create_escrow, decremented on close_escrow.
     /// close_agent refuses to execute unless this is zero.
@@ -767,10 +772,10 @@ pub struct AgentStats {
 #[account]
 pub struct ToolCategoryIndex {
     pub bump: u8,
-    pub category: u8,             // ToolCategory enum value (0-9)
+    pub category: u8, // ToolCategory enum value (0-9)
     #[max_len(100)]
-    pub tools: Vec<Pubkey>,       // ToolDescriptor PDAs
-    pub total_pages: u8,          // for overflow pagination
+    pub tools: Vec<Pubkey>, // ToolDescriptor PDAs
+    pub total_pages: u8, // for overflow pagination
     pub last_updated: i64,
 }
 
@@ -802,13 +807,13 @@ impl ToolCategoryIndex {
 #[account]
 pub struct AgentAttestation {
     pub bump: u8,
-    pub agent: Pubkey,             // the agent PDA
-    pub attester: Pubkey,          // authority wallet that vouches
+    pub agent: Pubkey,    // the agent PDA
+    pub attester: Pubkey, // authority wallet that vouches
     #[max_len(32)]
-    pub attestation_type: String,  // e.g. "verified", "audited", "partner"
-    pub metadata_hash: [u8; 32],   // sha256 of attestation evidence (offchain)
+    pub attestation_type: String, // e.g. "verified", "audited", "partner"
+    pub metadata_hash: [u8; 32], // sha256 of attestation evidence (offchain)
     pub is_active: bool,
-    pub expires_at: i64,           // 0 = never expires
+    pub expires_at: i64, // 0 = never expires
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -855,15 +860,15 @@ impl AgentAttestation {
 #[account]
 pub struct MemoryBuffer {
     pub bump: u8,
-    pub session: Pubkey,       // parent SessionLedger PDA
-    pub authority: Pubkey,     // wallet authorized to write/close
-    pub page_index: u32,       // buffer page number (0, 1, 2, ...)
-    pub num_entries: u16,      // how many append_buffer calls
-    pub total_size: u16,       // current total data bytes
+    pub session: Pubkey,   // parent SessionLedger PDA
+    pub authority: Pubkey, // wallet authorized to write/close
+    pub page_index: u32,   // buffer page number (0, 1, 2, ...)
+    pub num_entries: u16,  // how many append_buffer calls
+    pub total_size: u16,   // current total data bytes
     pub created_at: i64,
     pub updated_at: i64,
     #[max_len(10000)]
-    pub data: Vec<u8>,         // appended data (grows via realloc)
+    pub data: Vec<u8>, // appended data (grows via realloc)
 }
 
 #[cfg(feature = "legacy-memory")]
@@ -885,9 +890,9 @@ impl MemoryBuffer {
         + 2    // total_size
         + 8    // created_at
         + 8    // updated_at
-        + 4;   // vec length prefix
-    // Note: NO padding — space is allocated dynamically via realloc.
-    // HEADER_SPACE = 101 bytes
+        + 4; // vec length prefix
+             // Note: NO padding — space is allocated dynamically via realloc.
+             // HEADER_SPACE = 101 bytes
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -935,19 +940,17 @@ impl MemoryBuffer {
 #[account]
 pub struct MemoryDigest {
     pub bump: u8,
-    pub session: Pubkey,        // parent SessionLedger PDA
-    pub authority: Pubkey,      // wallet authorized to post/close
-    pub num_entries: u32,       // total post_digest calls
-    pub merkle_root: [u8; 32],  // rolling hash: sha256(prev_root || content_hash)
-    pub latest_hash: [u8; 32],  // most recent content_hash
-    pub total_data_size: u64,   // cumulative bytes (tracked, NOT stored onchain)
-    pub storage_ref: [u8; 32],  // pointer to offchain bundle (type-dependent)
-    pub storage_type: u8,       // see storage types above
+    pub session: Pubkey,       // parent SessionLedger PDA
+    pub authority: Pubkey,     // wallet authorized to post/close
+    pub num_entries: u32,      // total post_digest calls
+    pub merkle_root: [u8; 32], // rolling hash: sha256(prev_root || content_hash)
+    pub latest_hash: [u8; 32], // most recent content_hash
+    pub total_data_size: u64,  // cumulative bytes (tracked, NOT stored onchain)
+    pub storage_ref: [u8; 32], // pointer to offchain bundle (type-dependent)
+    pub storage_type: u8,      // see storage types above
     pub created_at: i64,
     pub updated_at: i64,
 }
-
-
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Account: MemoryLedger — Unified Onchain Memory
@@ -992,17 +995,17 @@ pub struct MemoryDigest {
 #[account]
 pub struct MemoryLedger {
     pub bump: u8,
-    pub session: Pubkey,          // parent SessionLedger PDA
-    pub authority: Pubkey,        // wallet authorized to write/close
-    pub num_entries: u32,         // total writes (ever, including evicted)
-    pub merkle_root: [u8; 32],    // rolling hash of ALL entries
-    pub latest_hash: [u8; 32],    // most recent content_hash
-    pub total_data_size: u64,     // cumulative bytes written (ever)
+    pub session: Pubkey,       // parent SessionLedger PDA
+    pub authority: Pubkey,     // wallet authorized to write/close
+    pub num_entries: u32,      // total writes (ever, including evicted)
+    pub merkle_root: [u8; 32], // rolling hash of ALL entries
+    pub latest_hash: [u8; 32], // most recent content_hash
+    pub total_data_size: u64,  // cumulative bytes written (ever)
     pub created_at: i64,
     pub updated_at: i64,
-    pub num_pages: u32,           // sealed archive pages (permanent, immutable)
+    pub num_pages: u32, // sealed archive pages (permanent, immutable)
     #[max_len(4096)]
-    pub ring: Vec<u8>,            // sliding-window ring buffer
+    pub ring: Vec<u8>, // sliding-window ring buffer
 }
 
 impl MemoryLedger {
@@ -1042,7 +1045,7 @@ pub struct LedgerPage {
     pub data_size: u32,                // raw data size in bytes
     pub merkle_root_at_seal: [u8; 32], // merkle root snapshot at time of seal
     #[max_len(4096)]
-    pub data: Vec<u8>,                 // frozen ring buffer contents (IMMUTABLE)
+    pub data: Vec<u8>, // frozen ring buffer contents (IMMUTABLE)
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1070,11 +1073,11 @@ pub struct LedgerPage {
 #[account]
 pub struct EscrowAccountV2 {
     pub bump: u8,
-    pub version: u8,               // 2
+    pub version: u8, // 2
     pub agent: Pubkey,
     pub depositor: Pubkey,
     pub agent_wallet: Pubkey,
-    pub escrow_nonce: u64,         // allows multiple escrows per pair
+    pub escrow_nonce: u64, // allows multiple escrows per pair
     pub balance: u64,
     pub total_deposited: u64,
     pub total_settled: u64,
@@ -1096,10 +1099,10 @@ pub struct EscrowAccountV2 {
     /// DEPRECATED in v0.7 — arbiter removed, disputes auto-resolved via receipts
     pub arbiter: Option<Pubkey>,
     // ── v2 pending totals ──
-    pub pending_amount: u64,       // total lamports locked in pending settlements
-    pub pending_calls: u64,        // total calls in pending settlements
+    pub pending_amount: u64, // total lamports locked in pending settlements
+    pub pending_calls: u64,  // total calls in pending settlements
     // ── v0.7 receipt tracking ──
-    pub receipt_batch_count: u32,  // counter for ReceiptBatch PDAs
+    pub receipt_batch_count: u32, // counter for ReceiptBatch PDAs
     // ── v0.13 hardening ──
     /// Cumulative dispute bonds held in escrow (orphan protection).
     pub dispute_bond_total: u64,
@@ -1140,13 +1143,13 @@ impl EscrowAccountV2 {
 #[account]
 pub struct ReceiptBatch {
     pub bump: u8,
-    pub escrow: Pubkey,           // parent EscrowAccountV2 PDA
-    pub batch_index: u32,         // sequential per escrow (0, 1, 2, ...)
-    pub merkle_root: [u8; 32],    // sha256 merkle tree root of all receipts
-    pub call_count: u32,          // number of receipts in this batch
-    pub period_start: i64,        // first receipt timestamp in batch
-    pub period_end: i64,          // last receipt timestamp in batch
-    pub inscribed_at: i64,        // when committed on-chain
+    pub escrow: Pubkey,        // parent EscrowAccountV2 PDA
+    pub batch_index: u32,      // sequential per escrow (0, 1, 2, ...)
+    pub merkle_root: [u8; 32], // sha256 merkle tree root of all receipts
+    pub call_count: u32,       // number of receipts in this batch
+    pub period_start: i64,     // first receipt timestamp in batch
+    pub period_end: i64,       // last receipt timestamp in batch
+    pub inscribed_at: i64,     // when committed on-chain
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -1171,13 +1174,13 @@ pub struct PendingSettlement {
     pub depositor: Pubkey,
     pub settlement_index: u64,
     pub calls_to_settle: u64,
-    pub amount: u64,               // lamports/tokens locked
+    pub amount: u64, // lamports/tokens locked
     pub service_hash: [u8; 32],
     pub receipt_merkle_root: [u8; 32], // v0.7: links to ReceiptBatch merkle root
     pub created_at: i64,
-    pub release_slot: u64,         // slot after which auto-release allowed
+    pub release_slot: u64, // slot after which auto-release allowed
     pub is_finalized: bool,
-    pub is_disputed: bool,          // true if a dispute has been filed
+    pub is_disputed: bool, // true if a dispute has been filed
     pub outcome: DisputeOutcome,
 }
 
@@ -1206,13 +1209,13 @@ pub struct DisputeRecord {
     pub outcome: DisputeOutcome,
     pub resolution_layer: ResolutionLayer, // v0.7: how it was resolved
     pub created_at: i64,
-    pub resolved_at: i64,              // 0 = unresolved
-    pub resolution_hash: [u8; 32],     // sha256 of resolution evidence
-    pub slash_amount: u64,             // slashed from agent stake (if depositor wins)
-    pub dispute_bond: u64,             // v0.7: 10% bond for Quality disputes
-    pub proven_calls: u32,             // v0.7: calls proven via receipt proof
-    pub claimed_calls: u32,            // v0.7: calls claimed in settlement
-    pub proof_deadline: i64,           // v0.7: unix timestamp — agent must prove by this
+    pub resolved_at: i64,          // 0 = unresolved
+    pub resolution_hash: [u8; 32], // sha256 of resolution evidence
+    pub slash_amount: u64,         // slashed from agent stake (if depositor wins)
+    pub dispute_bond: u64,         // v0.7: 10% bond for Quality disputes
+    pub proven_calls: u32,         // v0.7: calls proven via receipt proof
+    pub claimed_calls: u32,        // v0.7: calls claimed in settlement
+    pub proof_deadline: i64,       // v0.7: unix timestamp — agent must prove by this
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -1230,24 +1233,24 @@ pub struct AgentStake {
     pub agent: Pubkey,
     pub wallet: Pubkey,
     pub staked_amount: u64,
-    pub slashed_amount: u64,        // lifetime slashed
+    pub slashed_amount: u64, // lifetime slashed
     pub last_stake_at: i64,
-    pub unstake_requested_at: i64,  // 0 = no pending unstake
+    pub unstake_requested_at: i64, // 0 = no pending unstake
     pub unstake_amount: u64,
-    pub unstake_available_at: i64,  // 0 = no pending unstake
-    pub total_disputes_won: u32,    // disputes where agent won
-    pub total_disputes_lost: u32,   // disputes where agent lost
+    pub unstake_available_at: i64, // 0 = no pending unstake
+    pub total_disputes_won: u32,   // disputes where agent won
+    pub total_disputes_lost: u32,  // disputes where agent lost
     pub created_at: i64,
 }
 
 impl AgentStake {
-    pub const MIN_STAKE: u64 = 100_000_000;            // 0.1 SOL — permanent floor
+    pub const MIN_STAKE: u64 = 100_000_000; // 0.1 SOL — permanent floor
     pub const UNSTAKE_COOLDOWN_SECONDS: i64 = 604_800; // 7 days (was misnamed `_SLOTS` pre-v0.11)
     /// DEPRECATED — kept for backwards-compatible IDL/clients. Use `UNSTAKE_COOLDOWN_SECONDS`.
     pub const UNSTAKE_COOLDOWN_SLOTS: u64 = 1_512_000;
-    pub const SLASH_BPS: u64 = 5_000;                  // 50% of dispute amount
-    pub const PROOF_DEADLINE_SECONDS: i64 = 604_800;   // 7 days to submit receipt proof
-    pub const QUALITY_DISPUTE_BOND_BPS: u64 = 1_000;   // 10% bond for quality disputes
+    pub const SLASH_BPS: u64 = 5_000; // 50% of dispute amount
+    pub const PROOF_DEADLINE_SECONDS: i64 = 604_800; // 7 days to submit receipt proof
+    pub const QUALITY_DISPUTE_BOND_BPS: u64 = 1_000; // 10% bond for quality disputes
     /// v0.11 H-1: per-escrow stake-coverage ratio. Required stake at create-time
     /// is `max(MIN_STAKE, escrow_amount * STAKE_COVERAGE_BPS / 10_000)`. Set to
     /// SLASH_BPS so the slash on a lost dispute is fully collateralised by stake.
@@ -1280,7 +1283,7 @@ pub struct Subscription {
     pub intervals_paid: u32,
     pub started_at: i64,
     pub last_claimed_at: i64,
-    pub cancelled_at: i64,          // 0 = active
+    pub cancelled_at: i64, // 0 = active
     pub next_due_at: i64,
     pub created_at: i64,
 }
@@ -1376,10 +1379,10 @@ impl IndexPage {
 #[account]
 pub struct SettlementReceipt {
     pub bump: u8,
-    pub escrow: Pubkey,        // EscrowAccount or EscrowAccountV2 PDA
-    pub service_hash: [u8; 32],// the (or batch_root) settled hash
-    pub calls_settled: u64,    // calls settled by this receipt
-    pub amount: u64,           // payout amount (escrow base unit)
+    pub escrow: Pubkey,         // EscrowAccount or EscrowAccountV2 PDA
+    pub service_hash: [u8; 32], // the (or batch_root) settled hash
+    pub calls_settled: u64,     // calls settled by this receipt
+    pub amount: u64,            // payout amount (escrow base unit)
     pub settled_at: i64,
 }
 
@@ -1393,5 +1396,3 @@ impl VaultDelegate {
     /// delegates with `expires_at = 0` (never) keep working.
     pub const MAX_DELEGATE_DURATION_SECS: i64 = 365 * 86_400;
 }
-
-

@@ -40,8 +40,7 @@ import {
 describe("05 — Escrow & x402 Payments", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-  const program = anchor.workspace
-    .synapseAgentSap as Program<SynapseAgentSap>;
+  const program = anchor.workspace.synapseAgentSap as Program<SynapseAgentSap>;
   const connection = provider.connection;
 
   const authority = Keypair.generate();
@@ -80,16 +79,16 @@ describe("05 — Escrow & x402 Payments", () => {
 
     await program.methods
       .createEscrow(
-        new BN(PRICE_PER_CALL),  // price_per_call
-        new BN(100),             // max_calls (100 max)
+        new BN(PRICE_PER_CALL), // price_per_call
+        new BN(100), // max_calls (100 max)
         new BN(INITIAL_DEPOSIT), // initial_deposit
-        new BN(0),               // expires_at (never)
+        new BN(0), // expires_at (never)
         [
-          { afterCalls: 50, pricePerCall: new BN(80_000) },  // 20% discount after 50
+          { afterCalls: 50, pricePerCall: new BN(80_000) }, // 20% discount after 50
           { afterCalls: 100, pricePerCall: new BN(60_000) }, // 40% discount after 100
         ],
         null, // token_mint (SOL)
-        9     // token_decimals
+        9 // token_decimals
       )
       .accountsStrict({
         depositor: client.publicKey,
@@ -137,8 +136,8 @@ describe("05 — Escrow & x402 Payments", () => {
 
     await program.methods
       .settleCalls(
-        new BN(3),        // calls_to_settle
-        svcHash           // service_hash (proof of work)
+        new BN(3), // calls_to_settle
+        svcHash // service_hash (proof of work)
       )
       .accountsStrict({
         wallet: agentOwner.publicKey,
@@ -173,7 +172,7 @@ describe("05 — Escrow & x402 Payments", () => {
       { callsToSettle: new BN(1), serviceHash: randomHash() },
     ];
     const batchRoot = computeBatchRoot(
-      settlements.map((s) => Buffer.from(s.serviceHash)),
+      settlements.map((s) => Buffer.from(s.serviceHash))
     );
     const [receiptPda] = findSettlementReceiptPda(escrowPda, batchRoot);
 

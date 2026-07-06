@@ -1,7 +1,7 @@
-use anchor_lang::prelude::*;
-use crate::state::*;
-use crate::events::*;
 use crate::errors::SapError;
+use crate::events::*;
+use crate::state::*;
+use anchor_lang::prelude::*;
 
 // ═══════════════════════════════════════════════════════════════════
 //  AGENT ATTESTATION — Web of Trust
@@ -93,8 +93,12 @@ pub fn create_attestation_handler(
     att.created_at = clock.unix_timestamp;
     att.updated_at = clock.unix_timestamp;
 
-    ctx.accounts.global_registry.total_attestations = ctx.accounts.global_registry.total_attestations
-        .checked_add(1).ok_or(error!(SapError::ArithmeticOverflow))?;
+    ctx.accounts.global_registry.total_attestations = ctx
+        .accounts
+        .global_registry
+        .total_attestations
+        .checked_add(1)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
 
     emit!(AttestationCreatedEvent {
         agent: ctx.accounts.agent.key(),
@@ -178,6 +182,10 @@ pub struct CloseAttestationAccountConstraints<'info> {
 }
 
 pub fn close_attestation_handler(ctx: Context<CloseAttestationAccountConstraints>) -> Result<()> {
-    ctx.accounts.global_registry.total_attestations = ctx.accounts.global_registry.total_attestations.saturating_sub(1);
+    ctx.accounts.global_registry.total_attestations = ctx
+        .accounts
+        .global_registry
+        .total_attestations
+        .saturating_sub(1);
     Ok(())
 }

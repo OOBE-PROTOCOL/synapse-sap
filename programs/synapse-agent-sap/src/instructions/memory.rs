@@ -1,7 +1,7 @@
-use anchor_lang::prelude::*;
-use crate::state::*;
-use crate::events::*;
 use crate::errors::SapError;
+use crate::events::*;
+use crate::state::*;
+use anchor_lang::prelude::*;
 
 // ═══════════════════════════════════════════════════════════════════
 //  store_memory — Create a memory entry PDA (metadata + IPFS pointer)
@@ -131,8 +131,10 @@ pub fn append_chunk_handler(
 
     // ── Update entry metadata ──
     let entry = &mut ctx.accounts.memory_entry;
-    entry.total_chunks = entry.total_chunks
-        .checked_add(1).ok_or(error!(SapError::ArithmeticOverflow))?;
+    entry.total_chunks = entry
+        .total_chunks
+        .checked_add(1)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
     entry.updated_at = clock.unix_timestamp;
 
     Ok(())

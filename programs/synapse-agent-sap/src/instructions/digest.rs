@@ -1,8 +1,8 @@
+use crate::errors::SapError;
+use crate::events::*;
+use crate::state::*;
 use anchor_lang::prelude::*;
 use solana_sha256_hasher::hashv;
-use crate::state::*;
-use crate::events::*;
-use crate::errors::SapError;
 
 // ═══════════════════════════════════════════════════════════════════
 //  SYNAPSE MEMORY DIGEST — Proof-of-Memory Protocol
@@ -134,10 +134,7 @@ pub fn post_digest_handler(
     let clock = Clock::get()?;
 
     // ── Validation ──
-    require!(
-        content_hash != [0u8; 32],
-        SapError::EmptyDigestHash
-    );
+    require!(content_hash != [0u8; 32], SapError::EmptyDigestHash);
 
     let digest_key = ctx.accounts.digest.key();
     let digest = &mut ctx.accounts.digest;
@@ -147,10 +144,12 @@ pub fn post_digest_handler(
 
     // ── Update counters (checked arithmetic) ──
     let entry_index = digest.num_entries;
-    digest.num_entries = digest.num_entries
+    digest.num_entries = digest
+        .num_entries
         .checked_add(1)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
-    digest.total_data_size = digest.total_data_size
+    digest.total_data_size = digest
+        .total_data_size
         .checked_add(data_size as u64)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
     digest.latest_hash = content_hash;
@@ -232,10 +231,7 @@ pub fn inscribe_to_digest_handler(
         data.len() <= SessionLedger::MAX_INSCRIPTION_SIZE,
         SapError::InscriptionTooLarge
     );
-    require!(
-        content_hash != [0u8; 32],
-        SapError::EmptyDigestHash
-    );
+    require!(content_hash != [0u8; 32], SapError::EmptyDigestHash);
 
     let data_len = data.len() as u32;
     let digest_key = ctx.accounts.digest.key();
@@ -246,10 +242,12 @@ pub fn inscribe_to_digest_handler(
 
     // ── Update counters (checked arithmetic) ──
     let entry_index = digest.num_entries;
-    digest.num_entries = digest.num_entries
+    digest.num_entries = digest
+        .num_entries
         .checked_add(1)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
-    digest.total_data_size = digest.total_data_size
+    digest.total_data_size = digest
+        .total_data_size
         .checked_add(data_len as u64)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
     digest.latest_hash = content_hash;

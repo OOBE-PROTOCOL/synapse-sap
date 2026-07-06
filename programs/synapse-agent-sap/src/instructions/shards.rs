@@ -1,7 +1,7 @@
-use anchor_lang::prelude::*;
-use crate::state::*;
-use crate::events::*;
 use crate::errors::SapError;
+use crate::events::*;
+use crate::state::*;
+use anchor_lang::prelude::*;
 
 // ═══════════════════════════════════════════════════════════════════
 //  COUNTER SHARDS — Parallel Write Throughput
@@ -35,8 +35,14 @@ pub struct InitShardAccountConstraints<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn init_shard_handler(ctx: Context<InitShardAccountConstraints>, shard_index: u8) -> Result<()> {
-    require!(shard_index < CounterShard::NUM_SHARDS, SapError::InvalidShardIndex);
+pub fn init_shard_handler(
+    ctx: Context<InitShardAccountConstraints>,
+    shard_index: u8,
+) -> Result<()> {
+    require!(
+        shard_index < CounterShard::NUM_SHARDS,
+        SapError::InvalidShardIndex
+    );
 
     let clock = Clock::get()?;
     let shard = &mut ctx.accounts.shard;

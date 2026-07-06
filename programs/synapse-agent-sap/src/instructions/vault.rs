@@ -1,8 +1,8 @@
+use crate::errors::SapError;
+use crate::events::*;
+use crate::state::*;
 use anchor_lang::prelude::*;
 use solana_sha256_hasher::hashv;
-use crate::state::*;
-use crate::events::*;
-use crate::errors::SapError;
 
 // ═══════════════════════════════════════════════════════════════════
 //  SYNAPSE MEMORY VAULT — Encrypted Transaction Inscriptions
@@ -81,8 +81,12 @@ pub fn init_vault_handler(
     vault.last_nonce_rotation = 0;
 
     // Update global stats
-    ctx.accounts.global_registry.total_vaults = ctx.accounts.global_registry.total_vaults
-        .checked_add(1).ok_or(error!(SapError::ArithmeticOverflow))?;
+    ctx.accounts.global_registry.total_vaults = ctx
+        .accounts
+        .global_registry
+        .total_vaults
+        .checked_add(1)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
 
     emit!(VaultInitializedEvent {
         agent: ctx.accounts.agent.key(),
@@ -153,8 +157,10 @@ pub fn open_session_handler(
     session.tip_hash = [0u8; 32];
 
     let vault = &mut ctx.accounts.vault;
-    vault.total_sessions = vault.total_sessions
-        .checked_add(1).ok_or(error!(SapError::ArithmeticOverflow))?;
+    vault.total_sessions = vault
+        .total_sessions
+        .checked_add(1)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
 
     emit!(SessionOpenedEvent {
         vault: vault.key(),
@@ -260,10 +266,7 @@ fn inscribe_core(
         SapError::InvalidSequence
     );
     let expected_epoch = sequence / SessionLedger::INSCRIPTIONS_PER_EPOCH;
-    require!(
-        epoch_index == expected_epoch,
-        SapError::EpochMismatch
-    );
+    require!(epoch_index == expected_epoch, SapError::EpochMismatch);
     require!(total_fragments >= 1, SapError::InvalidTotalFragments);
     require!(
         fragment_index < total_fragments,
@@ -290,8 +293,10 @@ fn inscribe_core(
         epoch_page.last_ts = clock.unix_timestamp;
 
         session.current_epoch = epoch_index;
-        session.total_epochs = session.total_epochs
-            .checked_add(1).ok_or(error!(SapError::ArithmeticOverflow))?;
+        session.total_epochs = session
+            .total_epochs
+            .checked_add(1)
+            .ok_or(error!(SapError::ArithmeticOverflow))?;
 
         emit!(EpochOpenedEvent {
             session: session_key,
@@ -303,10 +308,14 @@ fn inscribe_core(
     }
 
     // ── Update epoch page stats ──
-    epoch_page.inscription_count = epoch_page.inscription_count
-        .checked_add(1).ok_or(error!(SapError::ArithmeticOverflow))?;
-    epoch_page.total_bytes = epoch_page.total_bytes
-        .checked_add(data_len).ok_or(error!(SapError::ArithmeticOverflow))?;
+    epoch_page.inscription_count = epoch_page
+        .inscription_count
+        .checked_add(1)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
+    epoch_page.total_bytes = epoch_page
+        .total_bytes
+        .checked_add(data_len)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
     epoch_page.last_ts = clock.unix_timestamp;
 
     // ── Update merkle accumulator ──
@@ -314,20 +323,24 @@ fn inscribe_core(
     session.merkle_root = hashv(&[&session.merkle_root, &content_hash]).to_bytes();
 
     // ── Update session counter & stats (checked arithmetic) ──
-    session.sequence_counter = session.sequence_counter
+    session.sequence_counter = session
+        .sequence_counter
         .checked_add(1)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
-    session.total_bytes = session.total_bytes
+    session.total_bytes = session
+        .total_bytes
         .checked_add(data_len as u64)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
     session.last_inscribed_at = clock.unix_timestamp;
     session.tip_hash = content_hash;
 
     // ── Update vault aggregate stats (checked arithmetic) ──
-    vault.total_inscriptions = vault.total_inscriptions
+    vault.total_inscriptions = vault
+        .total_inscriptions
         .checked_add(1)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
-    vault.total_bytes_inscribed = vault.total_bytes_inscribed
+    vault.total_bytes_inscribed = vault
+        .total_bytes_inscribed
         .checked_add(data_len as u64)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
 
@@ -470,7 +483,8 @@ pub fn close_vault_handler(ctx: Context<CloseVaultAccountConstraints>) -> Result
     let vault = &ctx.accounts.vault;
     let clock = Clock::get()?;
 
-    ctx.accounts.global_registry.total_vaults = ctx.accounts.global_registry.total_vaults.saturating_sub(1);
+    ctx.accounts.global_registry.total_vaults =
+        ctx.accounts.global_registry.total_vaults.saturating_sub(1);
 
     emit!(VaultClosedEvent {
         vault: vault.key(),
@@ -571,7 +585,10 @@ pub struct CloseEpochPageAccountConstraints<'info> {
     pub epoch_page: Account<'info, EpochPage>,
 }
 
-pub fn close_epoch_page_handler(ctx: Context<CloseEpochPageAccountConstraints>, epoch_index: u32) -> Result<()> {
+pub fn close_epoch_page_handler(
+    ctx: Context<CloseEpochPageAccountConstraints>,
+    epoch_index: u32,
+) -> Result<()> {
     let clock = Clock::get()?;
 
     emit!(EpochPageClosedEvent {
@@ -622,8 +639,10 @@ pub fn rotate_vault_nonce_handler(
 
     let old_nonce = vault.vault_nonce;
     vault.vault_nonce = new_nonce;
-    vault.nonce_version = vault.nonce_version
-        .checked_add(1).ok_or(error!(SapError::ArithmeticOverflow))?;
+    vault.nonce_version = vault
+        .nonce_version
+        .checked_add(1)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
     vault.last_nonce_rotation = clock.unix_timestamp;
 
     emit!(VaultNonceRotatedEvent {
@@ -692,7 +711,8 @@ pub fn add_vault_delegate_handler(
     // v0.10 hardening: forbid never-expiring delegates and cap maximum
     // duration at MAX_DELEGATE_DURATION_SECS (1 year).  Existing
     // delegates created before the upgrade are unaffected.
-    let max_expiry = clock.unix_timestamp
+    let max_expiry = clock
+        .unix_timestamp
         .checked_add(VaultDelegate::MAX_DELEGATE_DURATION_SECS)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
     require!(
@@ -752,7 +772,9 @@ pub struct RevokeVaultDelegateAccountConstraints<'info> {
     pub vault_delegate: Account<'info, VaultDelegate>,
 }
 
-pub fn revoke_vault_delegate_handler(ctx: Context<RevokeVaultDelegateAccountConstraints>) -> Result<()> {
+pub fn revoke_vault_delegate_handler(
+    ctx: Context<RevokeVaultDelegateAccountConstraints>,
+) -> Result<()> {
     let clock = Clock::get()?;
 
     emit!(DelegateRevokedEvent {
@@ -946,20 +968,24 @@ pub fn compact_inscribe_handler(
     session.merkle_root = hashv(&[&session.merkle_root, &content_hash]).to_bytes();
 
     // ── Update session (checked arithmetic) ──
-    session.sequence_counter = session.sequence_counter
+    session.sequence_counter = session
+        .sequence_counter
         .checked_add(1)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
-    session.total_bytes = session.total_bytes
+    session.total_bytes = session
+        .total_bytes
         .checked_add(data_len as u64)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
     session.last_inscribed_at = clock.unix_timestamp;
     session.tip_hash = content_hash;
 
     // ── Update vault (checked arithmetic) ──
-    vault.total_inscriptions = vault.total_inscriptions
+    vault.total_inscriptions = vault
+        .total_inscriptions
         .checked_add(1)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
-    vault.total_bytes_inscribed = vault.total_bytes_inscribed
+    vault.total_bytes_inscribed = vault
+        .total_bytes_inscribed
         .checked_add(data_len as u64)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
 

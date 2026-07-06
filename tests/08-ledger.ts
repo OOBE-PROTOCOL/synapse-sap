@@ -35,8 +35,7 @@ import {
 describe("08 — MemoryLedger (Ring Buffer + TX Logs)", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-  const program = anchor.workspace
-    .synapseAgentSap as Program<SynapseAgentSap>;
+  const program = anchor.workspace.synapseAgentSap as Program<SynapseAgentSap>;
   const connection = provider.connection;
 
   const authority = Keypair.generate();

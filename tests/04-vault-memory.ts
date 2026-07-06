@@ -37,8 +37,7 @@ import {
 describe("04 — Memory Vault & Inscriptions", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-  const program = anchor.workspace
-    .synapseAgentSap as Program<SynapseAgentSap>;
+  const program = anchor.workspace.synapseAgentSap as Program<SynapseAgentSap>;
   const connection = provider.connection;
 
   const authority = Keypair.generate();
@@ -128,14 +127,14 @@ describe("04 — Memory Vault & Inscriptions", () => {
 
     await program.methods
       .inscribeMemory(
-        0,                         // sequence
-        encryptedData,             // encrypted_data
-        nonce,                     // nonce (12 bytes)
-        contentHash,               // content_hash
-        1,                         // total_fragments
-        0,                         // fragment_index
-        0,                         // compression (none)
-        0                          // epoch_index
+        0, // sequence
+        encryptedData, // encrypted_data
+        nonce, // nonce (12 bytes)
+        contentHash, // content_hash
+        1, // total_fragments
+        0, // fragment_index
+        0, // compression (none)
+        0 // epoch_index
       )
       .accountsStrict({
         wallet: agentOwner.publicKey,
@@ -167,7 +166,7 @@ describe("04 — Memory Vault & Inscriptions", () => {
 
     await program.methods
       .compactInscribe(
-        1,             // sequence
+        1, // sequence
         data,
         nonce,
         contentHash
@@ -247,14 +246,14 @@ describe("04 — Memory Vault & Inscriptions", () => {
 
     await program.methods
       .inscribeMemoryDelegated(
-        2,             // sequence
+        2, // sequence
         data,
         nonce,
         contentHash,
-        1,             // total_fragments
-        0,             // fragment_index
-        0,             // compression
-        0              // epoch_index
+        1, // total_fragments
+        0, // fragment_index
+        0, // compression
+        0 // epoch_index
       )
       .accountsStrict({
         delegateSigner: delegateWallet.publicKey,

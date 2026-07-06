@@ -1,8 +1,8 @@
+use crate::errors::SapError;
+use crate::events::*;
+use crate::state::*;
 use anchor_lang::prelude::*;
 use solana_sha256_hasher::hash;
-use crate::state::*;
-use crate::events::*;
-use crate::errors::SapError;
 
 // ═══════════════════════════════════════════════════════════════════
 //  SYNAPSE TOOL SCHEMA REGISTRY — Onchain Typed Tool Descriptors
@@ -88,14 +88,13 @@ pub fn publish_tool_handler(
         SapError::InvalidToolNameHash
     );
 
-    // Validate enums
+    let parsed_http_method =
+        ToolHttpMethod::from_u8(http_method).ok_or(error!(SapError::InvalidToolHttpMethod))?;
+    let parsed_category =
+        ToolCategory::from_u8(category).ok_or(error!(SapError::InvalidToolCategory))?;
     require!(
-        ToolHttpMethod::from_u8(http_method).is_some(),
-        SapError::InvalidToolHttpMethod
-    );
-    require!(
-        ToolCategory::from_u8(category).is_some(),
-        SapError::InvalidToolCategory
+        required_params <= params_count,
+        SapError::InvalidToolParameterCount
     );
 
     let tool = &mut ctx.accounts.tool;
@@ -108,8 +107,8 @@ pub fn publish_tool_handler(
     tool.description_hash = description_hash;
     tool.input_schema_hash = input_schema_hash;
     tool.output_schema_hash = output_schema_hash;
-    tool.http_method = ToolHttpMethod::from_u8(http_method).unwrap();
-    tool.category = ToolCategory::from_u8(category).unwrap();
+    tool.http_method = parsed_http_method;
+    tool.category = parsed_category;
     tool.params_count = params_count;
     tool.required_params = required_params;
     tool.is_compound = is_compound;
@@ -120,8 +119,12 @@ pub fn publish_tool_handler(
     tool.previous_version = Pubkey::default();
 
     // Update global stats
-    ctx.accounts.global_registry.total_tools = ctx.accounts.global_registry.total_tools
-        .checked_add(1).ok_or(error!(SapError::ArithmeticOverflow))?;
+    ctx.accounts.global_registry.total_tools = ctx
+        .accounts
+        .global_registry
+        .total_tools
+        .checked_add(1)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
 
     emit!(ToolPublishedEvent {
         agent: ctx.accounts.agent.key(),
@@ -183,9 +186,18 @@ pub fn inscribe_tool_schema_handler(
     // Verify the hash matches what's on the ToolDescriptor
     // (clients re-verify: sha256(decompressed_data) == hash)
     match schema_type {
-        0 => require!(schema_hash == tool.input_schema_hash, SapError::InvalidSchemaHash),
-        1 => require!(schema_hash == tool.output_schema_hash, SapError::InvalidSchemaHash),
-        2 => require!(schema_hash == tool.description_hash, SapError::InvalidSchemaHash),
+        0 => require!(
+            schema_hash == tool.input_schema_hash,
+            SapError::InvalidSchemaHash
+        ),
+        1 => require!(
+            schema_hash == tool.output_schema_hash,
+            SapError::InvalidSchemaHash
+        ),
+        2 => require!(
+            schema_hash == tool.description_hash,
+            SapError::InvalidSchemaHash
+        ),
         _ => return Err(SapError::InvalidSchemaType.into()),
     }
 
@@ -258,7 +270,10 @@ pub fn update_tool_handler(
     );
 
     // Bump version
-    tool.version = tool.version.checked_add(1).ok_or(error!(SapError::ArithmeticOverflow))?;
+    tool.version = tool
+        .version
+        .checked_add(1)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
     tool.updated_at = clock.unix_timestamp;
 
     // Update fields if provided
@@ -272,18 +287,11 @@ pub fn update_tool_handler(
         tool.output_schema_hash = h;
     }
     if let Some(m) = http_method {
-        require!(
-            ToolHttpMethod::from_u8(m).is_some(),
-            SapError::InvalidToolHttpMethod
-        );
-        tool.http_method = ToolHttpMethod::from_u8(m).unwrap();
+        tool.http_method =
+            ToolHttpMethod::from_u8(m).ok_or(error!(SapError::InvalidToolHttpMethod))?;
     }
     if let Some(c) = category {
-        require!(
-            ToolCategory::from_u8(c).is_some(),
-            SapError::InvalidToolCategory
-        );
-        tool.category = ToolCategory::from_u8(c).unwrap();
+        tool.category = ToolCategory::from_u8(c).ok_or(error!(SapError::InvalidToolCategory))?;
     }
     if let Some(p) = params_count {
         tool.params_count = p;
@@ -291,6 +299,10 @@ pub fn update_tool_handler(
     if let Some(r) = required_params {
         tool.required_params = r;
     }
+    require!(
+        tool.required_params <= tool.params_count,
+        SapError::InvalidToolParameterCount
+    );
 
     emit!(ToolUpdatedEvent {
         agent: ctx.accounts.agent.key(),
@@ -422,7 +434,8 @@ pub fn close_tool_handler(ctx: Context<CloseToolAccountConstraints>) -> Result<(
     let clock = Clock::get()?;
     let tool = &ctx.accounts.tool;
 
-    ctx.accounts.global_registry.total_tools = ctx.accounts.global_registry.total_tools.saturating_sub(1);
+    ctx.accounts.global_registry.total_tools =
+        ctx.accounts.global_registry.total_tools.saturating_sub(1);
 
     emit!(ToolClosedEvent {
         agent: ctx.accounts.agent.key(),
@@ -506,8 +519,10 @@ pub fn create_session_checkpoint_handler(
     cp.created_at = clock.unix_timestamp;
 
     // Increment checkpoint counter
-    session.total_checkpoints = session.total_checkpoints
-        .checked_add(1).ok_or(error!(SapError::ArithmeticOverflow))?;
+    session.total_checkpoints = session
+        .total_checkpoints
+        .checked_add(1)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
 
     emit!(CheckpointCreatedEvent {
         session: session.key(),

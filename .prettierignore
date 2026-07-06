@@ -1,4 +1,8 @@
 .anchor
+.history
+.pnpm-store
+.superstack
+synapse-sap-sdk
 .DS_Store
 target
 node_modules

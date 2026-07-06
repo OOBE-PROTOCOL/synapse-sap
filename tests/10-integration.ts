@@ -81,8 +81,7 @@ interface AgentProfile {
 describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-  const program = anchor.workspace
-    .synapseAgentSap as Program<SynapseAgentSap>;
+  const program = anchor.workspace.synapseAgentSap as Program<SynapseAgentSap>;
   const connection = provider.connection;
 
   const authority = Keypair.generate();
@@ -99,7 +98,7 @@ describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
       protocols: ["jupiter-v6", "raydium-v3"],
       tools: [
         { name: "swap-sol-usdc", category: 0, method: 1 }, // Swap, POST
-        { name: "get-quote", category: 0, method: 0 },     // Swap, GET
+        { name: "get-quote", category: 0, method: 0 }, // Swap, GET
       ],
       wallet: Keypair.generate(),
     },
@@ -109,8 +108,8 @@ describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
       capabilities: ["analytics:price", "data:feed", "data:aggregate"],
       protocols: ["switchboard-v2", "pyth-v2"],
       tools: [
-        { name: "price-feed", category: 5, method: 0 },     // Data, GET
-        { name: "bulk-aggregate", category: 8, method: 4 },  // Analytics, COMPOUND
+        { name: "price-feed", category: 5, method: 0 }, // Data, GET
+        { name: "bulk-aggregate", category: 8, method: 4 }, // Analytics, COMPOUND
       ],
       wallet: Keypair.generate(),
     },
@@ -120,8 +119,8 @@ describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
       capabilities: ["nft:bid", "nft:list", "governance:vote"],
       protocols: ["tensor-v2", "magic-eden-v3"],
       tools: [
-        { name: "place-bid", category: 3, method: 1 },      // NFT, POST
-        { name: "list-nft", category: 3, method: 1 },       // NFT, POST
+        { name: "place-bid", category: 3, method: 1 }, // NFT, POST
+        { name: "list-nft", category: 3, method: 1 }, // NFT, POST
       ],
       wallet: Keypair.generate(),
     },
@@ -137,9 +136,7 @@ describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
       externalReviewer.publicKey,
       ...agents.map((a) => a.wallet.publicKey),
     ];
-    await Promise.all(
-      wallets.map((pk) => airdrop(connection, pk, 30))
-    );
+    await Promise.all(wallets.map((pk) => airdrop(connection, pk, 30)));
     globalPda = await ensureGlobalInitialized(program, authority);
   });
 
@@ -220,11 +217,11 @@ describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
             randomHash(),
             randomHash(),
             randomHash(),
-            tool.method,    // http_method
-            tool.category,  // category
-            1,              // params_count
-            1,              // required_params
-            false           // is_compound
+            tool.method, // http_method
+            tool.category, // category
+            1, // params_count
+            1, // required_params
+            false // is_compound
           )
           .accountsStrict({
             wallet: agent.wallet.publicKey,
@@ -650,9 +647,13 @@ describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
   // ═══════════════════════════════════════════════════════════════
 
   it("9.1 — 🔍 INDEXING COMPLETO: agenti, reputazioni, ownership, tools, attestazioni", async () => {
-    console.log("\n╔══════════════════════════════════════════════════════════╗");
+    console.log(
+      "\n╔══════════════════════════════════════════════════════════╗"
+    );
     console.log("║         SAP v2 — FULL ECOSYSTEM INDEX REPORT            ║");
-    console.log("╚══════════════════════════════════════════════════════════╝\n");
+    console.log(
+      "╚══════════════════════════════════════════════════════════╝\n"
+    );
 
     // Global Registry
     const globalState = await program.account.globalRegistry.fetch(globalPda);
@@ -676,25 +677,21 @@ describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
       console.log(
         `  PDA          : ${agent.agentPda!.toBase58().substring(0, 16)}…`
       );
-      console.log(`  Owner (wallet): ${acct.wallet.toBase58().substring(0, 16)}…`);
+      console.log(
+        `  Owner (wallet): ${acct.wallet.toBase58().substring(0, 16)}…`
+      );
       console.log(`  Description  : ${acct.description}`);
       console.log(`  Active       : ${acct.isActive}`);
       console.log(
-        `  Capabilities : ${acct.capabilities
-          .map((c: any) => c.id)
-          .join(", ")}`
+        `  Capabilities : ${acct.capabilities.map((c: any) => c.id).join(", ")}`
       );
-      console.log(
-        `  Protocols    : ${acct.protocols.join(", ")}`
-      );
+      console.log(`  Protocols    : ${acct.protocols.join(", ")}`);
       console.log(
         `  Pricing      : ${acct.pricing
           .map((p: any) => `${p.pricePerCall.toNumber()} lamports`)
           .join(", ")}`
       );
-      console.log(
-        `  x402 Endpoint: ${acct.x402Endpoint || "(none)"}`
-      );
+      console.log(`  x402 Endpoint: ${acct.x402Endpoint || "(none)"}`);
       console.log(`  Reputation   : ${acct.reputationScore}`);
       console.log(`  Feedbacks    : ${acct.totalFeedbacks}`);
       console.log(`  Avg Latency  : ${acct.avgLatencyMs}ms`);
@@ -713,12 +710,12 @@ describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
     const [capIdxPda] = findCapabilityIndexPda(capHash);
     const capIdx = await program.account.capabilityIndex.fetch(capIdxPda);
     console.log("── Capability Index: analytics:price ──────────────");
-    console.log(
-      `  Agents with this capability: ${capIdx.agents.length}`
-    );
+    console.log(`  Agents with this capability: ${capIdx.agents.length}`);
     for (const pk of capIdx.agents) {
       const agentAcct = await program.account.agentAccount.fetch(pk);
-      console.log(`    → ${agentAcct.name} (rep: ${agentAcct.reputationScore})`);
+      console.log(
+        `    → ${agentAcct.name} (rep: ${agentAcct.reputationScore})`
+      );
     }
     console.log();
 
@@ -727,9 +724,7 @@ describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
     const [protoIdxPda] = findProtocolIndexPda(protoHash);
     const protoIdx = await program.account.protocolIndex.fetch(protoIdxPda);
     console.log("── Protocol Index: tensor-v2 ───────────────────────");
-    console.log(
-      `  Agents supporting this protocol: ${protoIdx.agents.length}`
-    );
+    console.log(`  Agents supporting this protocol: ${protoIdx.agents.length}`);
     for (const pk of protoIdx.agents) {
       const agentAcct = await program.account.agentAccount.fetch(pk);
       console.log(`    → ${agentAcct.name}`);
@@ -782,7 +777,9 @@ describe("10 — Full Integration Scenario & Multi-Agent Indexing", () => {
 
     console.log("╔══════════════════════════════════════════════════════════╗");
     console.log("║                 ✅ INDEX REPORT COMPLETE                ║");
-    console.log("╚══════════════════════════════════════════════════════════╝\n");
+    console.log(
+      "╚══════════════════════════════════════════════════════════╝\n"
+    );
 
     // Assertions: verify everything is consistent
     expect(globalState.totalAgents.toNumber()).to.be.gte(3);

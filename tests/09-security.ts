@@ -56,8 +56,7 @@ import {
 describe("09 — Security & Exploit Prevention", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-  const program = anchor.workspace
-    .synapseAgentSap as Program<SynapseAgentSap>;
+  const program = anchor.workspace.synapseAgentSap as Program<SynapseAgentSap>;
   const connection = provider.connection;
 
   const authority = Keypair.generate();
@@ -885,7 +884,11 @@ describe("09 — Security & Exploit Prevention", () => {
           randomHash(),
           randomHash(),
           randomHash(),
-          0, 0, 1, 1, false
+          0,
+          0,
+          1,
+          1,
+          false
         )
         .accountsStrict({
           wallet: agentOwner.publicKey,
@@ -914,7 +917,11 @@ describe("09 — Security & Exploit Prevention", () => {
           randomHash(),
           randomHash(),
           randomHash(),
-          0, 0, 1, 1, false
+          0,
+          0,
+          1,
+          1,
+          false
         )
         .accountsStrict({
           wallet: agentOwner.publicKey,
@@ -942,7 +949,11 @@ describe("09 — Security & Exploit Prevention", () => {
         randomHash(),
         randomHash(),
         randomHash(),
-        1, 0, 2, 1, false
+        1,
+        0,
+        2,
+        1,
+        false
       )
       .accountsStrict({
         wallet: agentOwner.publicKey,

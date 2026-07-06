@@ -1,8 +1,8 @@
+use crate::errors::SapError;
+use crate::events::*;
+use crate::state::*;
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
-use crate::state::*;
-use crate::events::*;
-use crate::errors::SapError;
 
 // ═══════════════════════════════════════════════════════════════════
 //  AGENT STAKING — Collateralized Trust Layer
@@ -31,16 +31,25 @@ pub struct InitStakeAccountConstraints<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn init_stake_handler(ctx: Context<InitStakeAccountConstraints>, initial_deposit: u64) -> Result<()> {
+pub fn init_stake_handler(
+    ctx: Context<InitStakeAccountConstraints>,
+    initial_deposit: u64,
+) -> Result<()> {
     let clock = Clock::get()?;
-    require!(initial_deposit >= AgentStake::MIN_STAKE, SapError::StakeBelowMinimum);
+    require!(
+        initial_deposit >= AgentStake::MIN_STAKE,
+        SapError::StakeBelowMinimum
+    );
 
     // Transfer first, then mutate
     system_program::transfer(
-        CpiContext::new(ctx.accounts.system_program.key(), system_program::Transfer {
-            from: ctx.accounts.wallet.to_account_info(),
-            to: ctx.accounts.stake.to_account_info(),
-        }),
+        CpiContext::new(
+            ctx.accounts.system_program.key(),
+            system_program::Transfer {
+                from: ctx.accounts.wallet.to_account_info(),
+                to: ctx.accounts.stake.to_account_info(),
+            },
+        ),
         initial_deposit,
     )?;
 
@@ -91,18 +100,27 @@ pub struct DepositStakeAccountConstraints<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn deposit_stake_handler(ctx: Context<DepositStakeAccountConstraints>, amount: u64) -> Result<()> {
+pub fn deposit_stake_handler(
+    ctx: Context<DepositStakeAccountConstraints>,
+    amount: u64,
+) -> Result<()> {
     let clock = Clock::get()?;
     system_program::transfer(
-        CpiContext::new(ctx.accounts.system_program.key(), system_program::Transfer {
-            from: ctx.accounts.wallet.to_account_info(),
-            to: ctx.accounts.stake.to_account_info(),
-        }),
+        CpiContext::new(
+            ctx.accounts.system_program.key(),
+            system_program::Transfer {
+                from: ctx.accounts.wallet.to_account_info(),
+                to: ctx.accounts.stake.to_account_info(),
+            },
+        ),
         amount,
     )?;
 
     let stake = &mut ctx.accounts.stake;
-    stake.staked_amount = stake.staked_amount.checked_add(amount).ok_or(error!(SapError::ArithmeticOverflow))?;
+    stake.staked_amount = stake
+        .staked_amount
+        .checked_add(amount)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
     stake.last_stake_at = clock.unix_timestamp;
 
     // v0.11 L-2: top-up implicitly cancels any pending unstake.
@@ -153,7 +171,10 @@ pub struct RequestUnstakeAccountConstraints<'info> {
     pub stake: Account<'info, AgentStake>,
 }
 
-pub fn request_unstake_handler(ctx: Context<RequestUnstakeAccountConstraints>, amount: u64) -> Result<()> {
+pub fn request_unstake_handler(
+    ctx: Context<RequestUnstakeAccountConstraints>,
+    amount: u64,
+) -> Result<()> {
     let clock = Clock::get()?;
     let stake = &mut ctx.accounts.stake;
 
@@ -168,7 +189,10 @@ pub fn request_unstake_handler(ctx: Context<RequestUnstakeAccountConstraints>, a
         .staked_amount
         .checked_sub(amount)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
-    require!(remaining_after >= AgentStake::MIN_STAKE, SapError::StakeBelowMinimum);
+    require!(
+        remaining_after >= AgentStake::MIN_STAKE,
+        SapError::StakeBelowMinimum
+    );
 
     stake.unstake_requested_at = clock.unix_timestamp;
     stake.unstake_amount = amount;
@@ -211,7 +235,10 @@ pub struct CompleteUnstakeAccountConstraints<'info> {
 
 pub fn complete_unstake_handler(ctx: Context<CompleteUnstakeAccountConstraints>) -> Result<()> {
     let clock = Clock::get()?;
-    require!(clock.unix_timestamp >= ctx.accounts.stake.unstake_available_at, SapError::UnstakeCooldownNotMet);
+    require!(
+        clock.unix_timestamp >= ctx.accounts.stake.unstake_available_at,
+        SapError::UnstakeCooldownNotMet
+    );
 
     let amount = ctx.accounts.stake.unstake_amount;
     let stake_info = ctx.accounts.stake.to_account_info();
@@ -259,14 +286,48 @@ pub fn complete_unstake_handler(ctx: Context<CompleteUnstakeAccountConstraints>)
 }
 
 // ══════════════════════════════════════════════════════════════════
-//  v0.11 L-3: close_stake — RESERVED for v0.12
+//  close_stake — Recovery path for legacy closed agents
 // ══════════════════════════════════════════════════════════════════
-//  Closing the stake before all open escrows are settled would leave any
-//  outstanding dispute uncollateralised (try_slash would slash 0).
-//  `deactivate_agent` does NOT currently enforce zero open escrows, so an
-//  `is_active == false` gate is not a sufficient guarantee on its own.
-//
-//  close_stake will land in v0.12 once `AgentStake.active_obligations`
-//  exists (realloc migration). The error variant `StakeNotClosable` and
-//  the event `StakeClosedEvent` are pre-registered to keep that future
-//  IDL change additive.
+
+#[derive(Accounts)]
+pub struct CloseStakeAccountConstraints<'info> {
+    #[account(mut)]
+    pub wallet: Signer<'info>,
+
+    /// CHECK: Agent PDA may already be closed. The PDA address is still
+    /// seed-verified and must match the stake.account agent field.
+    #[account(
+        seeds = [b"sap_agent", wallet.key().as_ref()],
+        bump,
+    )]
+    pub agent: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        close = wallet,
+        seeds = [b"sap_stake", agent.key().as_ref()],
+        bump = stake.bump,
+        has_one = wallet,
+        constraint = stake.agent == agent.key() @ SapError::StakeAgentMismatch,
+    )]
+    pub stake: Account<'info, AgentStake>,
+}
+
+pub fn close_stake_handler(ctx: Context<CloseStakeAccountConstraints>) -> Result<()> {
+    require!(
+        ctx.accounts.agent.data_is_empty(),
+        SapError::StakeNotClosable
+    );
+
+    let ts = Clock::get()?.unix_timestamp;
+    let returned_lamports = ctx.accounts.stake.to_account_info().lamports();
+
+    emit!(StakeClosedEvent {
+        agent: ctx.accounts.agent.key(),
+        wallet: ctx.accounts.wallet.key(),
+        returned_lamports,
+        timestamp: ts,
+    });
+
+    Ok(())
+}

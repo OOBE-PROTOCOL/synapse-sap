@@ -1,8 +1,8 @@
-use anchor_lang::prelude::*;
-use crate::state::*;
-use crate::events::*;
 use crate::errors::SapError;
+use crate::events::*;
+use crate::state::*;
 use crate::validator;
+use anchor_lang::prelude::*;
 
 // ═══════════════════════════════════════════════════════════════════
 //  register_agent — Create a new agent identity PDA
@@ -75,7 +75,7 @@ pub fn register_handler(
 
     let clock = Clock::get()?;
     let cap_ids: Vec<String> = capabilities.iter().map(|c| c.id.clone()).collect();
-    let agent_key = ctx.accounts.agent.key();   // cache before mutable borrow
+    let agent_key = ctx.accounts.agent.key(); // cache before mutable borrow
 
     // ── Initialize AgentAccount PDA ──
     let agent = &mut ctx.accounts.agent;
@@ -120,10 +120,12 @@ pub fn register_handler(
 
     // ── Update global registry ──
     let global = &mut ctx.accounts.global_registry;
-    global.total_agents = global.total_agents
+    global.total_agents = global
+        .total_agents
         .checked_add(1)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
-    global.active_agents = global.active_agents
+    global.active_agents = global
+        .active_agents
         .checked_add(1)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
     global.last_registered_at = clock.unix_timestamp;
@@ -284,7 +286,8 @@ pub fn deactivate_handler(ctx: Context<DeactivateAgentAccountConstraints>) -> Re
     ctx.accounts.agent.updated_at = ts;
     ctx.accounts.agent_stats.is_active = false;
     ctx.accounts.agent_stats.updated_at = ts;
-    ctx.accounts.global_registry.active_agents = ctx.accounts.global_registry.active_agents.saturating_sub(1);
+    ctx.accounts.global_registry.active_agents =
+        ctx.accounts.global_registry.active_agents.saturating_sub(1);
 
     emit!(DeactivatedEvent {
         agent: ctx.accounts.agent.key(),
@@ -334,7 +337,10 @@ pub fn reactivate_handler(ctx: Context<ReactivateAgentAccountConstraints>) -> Re
     ctx.accounts.agent.updated_at = ts;
     ctx.accounts.agent_stats.is_active = true;
     ctx.accounts.agent_stats.updated_at = ts;
-    ctx.accounts.global_registry.active_agents = ctx.accounts.global_registry.active_agents
+    ctx.accounts.global_registry.active_agents = ctx
+        .accounts
+        .global_registry
+        .active_agents
         .checked_add(1)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
 
@@ -392,6 +398,16 @@ pub struct CloseAgentAccountConstraints<'info> {
 
     #[account(
         mut,
+        close = wallet,
+        seeds = [b"sap_stake", agent.key().as_ref()],
+        bump = stake.bump,
+        has_one = wallet,
+        constraint = stake.agent == agent.key() @ SapError::StakeAgentMismatch,
+    )]
+    pub stake: Account<'info, AgentStake>,
+
+    #[account(
+        mut,
         seeds = [b"sap_global"],
         bump = global_registry.bump,
     )]
@@ -413,15 +429,25 @@ pub fn close_handler(ctx: Context<CloseAgentAccountConstraints>) -> Result<()> {
     );
 
     let ts = Clock::get()?.unix_timestamp;
+    let returned_lamports = ctx.accounts.stake.to_account_info().lamports();
+    let agent_key = ctx.accounts.agent.key();
+    let wallet_key = ctx.accounts.wallet.key();
     let global = &mut ctx.accounts.global_registry;
     global.total_agents = global.total_agents.saturating_sub(1);
     if ctx.accounts.agent.is_active {
         global.active_agents = global.active_agents.saturating_sub(1);
     }
 
+    emit!(StakeClosedEvent {
+        agent: agent_key,
+        wallet: wallet_key,
+        returned_lamports,
+        timestamp: ts,
+    });
+
     emit!(ClosedEvent {
-        agent: ctx.accounts.agent.key(),
-        wallet: ctx.accounts.wallet.key(),
+        agent: agent_key,
+        wallet: wallet_key,
         timestamp: ts,
     });
 

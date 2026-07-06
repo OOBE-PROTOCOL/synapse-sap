@@ -28,8 +28,7 @@ import {
 describe("03 — Tool Registry", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-  const program = anchor.workspace
-    .synapseAgentSap as Program<SynapseAgentSap>;
+  const program = anchor.workspace.synapseAgentSap as Program<SynapseAgentSap>;
   const connection = provider.connection;
 
   const authority = Keypair.generate();
@@ -164,13 +163,13 @@ describe("03 — Tool Registry", () => {
 
     await program.methods
       .updateTool(
-        newDescHash,        // description_hash
-        null,               // input_schema_hash
-        null,               // output_schema_hash
-        null,               // http_method
-        null,               // category
-        null,               // params_count
-        null                // required_params
+        newDescHash, // description_hash
+        null, // input_schema_hash
+        null, // output_schema_hash
+        null, // http_method
+        null, // category
+        null, // params_count
+        null // required_params
       )
       .accountsStrict({
         wallet: agentOwner.publicKey,

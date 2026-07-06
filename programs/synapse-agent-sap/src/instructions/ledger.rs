@@ -1,8 +1,8 @@
+use crate::errors::SapError;
+use crate::events::*;
+use crate::state::*;
 use anchor_lang::prelude::*;
 use solana_sha256_hasher::hashv;
-use crate::state::*;
-use crate::events::*;
-use crate::errors::SapError;
 
 // ═══════════════════════════════════════════════════════════════════
 //  SYNAPSE MEMORY LEDGER — Unified On-Chain Memory
@@ -162,10 +162,12 @@ pub fn write_ledger_handler(
 
     // ── Update counters (checked arithmetic) ──
     let entry_index = ledger.num_entries;
-    ledger.num_entries = ledger.num_entries
+    ledger.num_entries = ledger
+        .num_entries
         .checked_add(1)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
-    ledger.total_data_size = ledger.total_data_size
+    ledger.total_data_size = ledger
+        .total_data_size
         .checked_add(data_len as u64)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
     ledger.latest_hash = content_hash;
@@ -196,7 +198,9 @@ pub fn write_ledger_handler(
     }
 
     // Append new entry: [u16 LE length][raw data bytes]
-    ledger.ring.extend_from_slice(&(data.len() as u16).to_le_bytes());
+    ledger
+        .ring
+        .extend_from_slice(&(data.len() as u16).to_le_bytes());
     ledger.ring.extend_from_slice(&data);
 
     // ── Emit to TX log — PERMANENT, IMMUTABLE, ZERO RENT ──
@@ -322,7 +326,10 @@ pub fn seal_ledger_handler(ctx: Context<SealLedgerAccountConstraints>) -> Result
     let clock = Clock::get()?;
 
     // ── Validate: ring must have data to seal ──
-    require!(!ctx.accounts.ledger.ring.is_empty(), SapError::LedgerRingEmpty);
+    require!(
+        !ctx.accounts.ledger.ring.is_empty(),
+        SapError::LedgerRingEmpty
+    );
 
     // ── Snapshot ring data before mutating ──
     let ring_data = ctx.accounts.ledger.ring.clone();
@@ -337,7 +344,9 @@ pub fn seal_ledger_handler(ctx: Context<SealLedgerAccountConstraints>) -> Result
     let mut pos: usize = 0;
     while pos + 2 <= ring_data.len() {
         let len = u16::from_le_bytes([ring_data[pos], ring_data[pos + 1]]) as usize;
-        if pos + 2 + len > ring_data.len() { break; }
+        if pos + 2 + len > ring_data.len() {
+            break;
+        }
         entries_count += 1;
         pos += 2 + len;
     }
@@ -355,7 +364,8 @@ pub fn seal_ledger_handler(ctx: Context<SealLedgerAccountConstraints>) -> Result
 
     // ── Update ledger: increment page count, clear ring ──
     let ledger = &mut ctx.accounts.ledger;
-    ledger.num_pages = ledger.num_pages
+    ledger.num_pages = ledger
+        .num_pages
         .checked_add(1)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
     ledger.ring.clear();

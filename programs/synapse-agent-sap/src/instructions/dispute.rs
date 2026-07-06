@@ -1,7 +1,7 @@
-use anchor_lang::prelude::*;
-use crate::state::*;
-use crate::events::*;
 use crate::errors::SapError;
+use crate::events::*;
+use crate::state::*;
+use anchor_lang::prelude::*;
 
 // ═══════════════════════════════════════════════════════════════════
 //  DISPUTE RESOLUTION — Receipt-Based Auto-Resolution
@@ -98,7 +98,8 @@ pub fn file_dispute_handler(
     // v0.13: Track dispute bond in escrow state (orphan protection)
     if bond_amount > 0 {
         let escrow = &mut ctx.accounts.escrow;
-        escrow.dispute_bond_total = escrow.dispute_bond_total
+        escrow.dispute_bond_total = escrow
+            .dispute_bond_total
             .checked_add(bond_amount)
             .ok_or(error!(SapError::ArithmeticOverflow))?;
     }
@@ -239,7 +240,6 @@ pub struct ResolveDisputeAccountConstraints<'info> {
     pub agent_stats: Account<'info, AgentStats>,
 }
 
-
 // ─────────────────────────────────────────────────────────────────
 //  close_dispute — Reclaim rent from finalized dispute
 // ─────────────────────────────────────────────────────────────────
@@ -283,7 +283,9 @@ pub struct ClosePendingSettlementAccountConstraints<'info> {
     pub pending_settlement: Account<'info, PendingSettlement>,
 }
 
-pub fn close_pending_settlement_handler(_ctx: Context<ClosePendingSettlementAccountConstraints>) -> Result<()> {
+pub fn close_pending_settlement_handler(
+    _ctx: Context<ClosePendingSettlementAccountConstraints>,
+) -> Result<()> {
     Ok(())
 }
 
@@ -338,7 +340,8 @@ pub fn try_slash_from_account<'info>(
     // unstake is pending it must be reduced proportionally to prevent
     // `complete_unstake` from underflowing (staked_amount < unstake_amount).
     if stake.unstake_amount > 0 {
-        let unstake_proportion = stake.unstake_amount
+        let unstake_proportion = stake
+            .unstake_amount
             .checked_mul(actual_slash)
             .ok_or(error!(SapError::ArithmeticOverflow))?
             / stake.staked_amount.max(1);

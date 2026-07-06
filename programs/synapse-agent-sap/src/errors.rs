@@ -473,6 +473,14 @@ pub enum SapError {
     PendingSettlementExists,
     #[msg("token account owner mismatch")]
     TokenAccountOwnerMismatch,
+    #[msg("invalid protocol treasury account")]
+    InvalidTreasury,
+    #[msg("pending settlement PDA required")]
+    PendingSettlementRequired,
+    #[msg("invalid pending settlement PDA")]
+    InvalidPendingSettlement,
+    #[msg("create_pending_settlement is deprecated; use settle_calls_v2")]
+    PendingSettlementDeprecated,
     #[msg("receipt proof exceeds maximum allowed count")]
     MaxReceiptProofExceeded,
     #[msg("merkle proof depth exceeds maximum allowed")]
@@ -489,4 +497,18 @@ pub enum SapError {
     AgentStatsVersionMismatch,
     #[msg("escrow version mismatch — migration required")]
     EscrowVersionMismatch,
+    #[msg("receipt proof already submitted for this dispute")]
+    ReceiptProofAlreadySubmitted,
+    #[msg("duplicate receipt proof")]
+    DuplicateReceiptProof,
+    #[msg("missing verified receipt signature")]
+    MissingReceiptSignature,
+    #[msg("agent does not declare this capability")]
+    AgentCapabilityMismatch,
+    #[msg("agent does not declare this protocol")]
+    AgentProtocolMismatch,
+    #[msg("required params exceeds params count")]
+    InvalidToolParameterCount,
+    #[msg("active escrow counter underflow")]
+    ActiveEscrowCounterUnderflow,
 }

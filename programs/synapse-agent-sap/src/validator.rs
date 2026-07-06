@@ -1,6 +1,6 @@
-use anchor_lang::prelude::*;
-use crate::state::*;
 use crate::errors::SapError;
+use crate::state::*;
+use anchor_lang::prelude::*;
 
 // ═══════════════════════════════════════════════════════════════════
 //  SAP Onchain Validator
@@ -25,24 +25,30 @@ use crate::errors::SapError;
 /// Validate name: non-empty, ≤64B, no control chars.
 pub fn validate_name(name: &str) -> Result<()> {
     require!(!name.is_empty(), SapError::EmptyName);
-    require!(name.len() <= AgentAccount::MAX_NAME_LEN, SapError::NameTooLong);
     require!(
-        !name.bytes().any(|b| b < 0x20),
-        SapError::ControlCharInName
+        name.len() <= AgentAccount::MAX_NAME_LEN,
+        SapError::NameTooLong
     );
+    require!(!name.bytes().any(|b| b < 0x20), SapError::ControlCharInName);
     Ok(())
 }
 
 /// Validate description: non-empty, ≤256B.
 pub fn validate_description(desc: &str) -> Result<()> {
     require!(!desc.is_empty(), SapError::EmptyDescription);
-    require!(desc.len() <= AgentAccount::MAX_DESC_LEN, SapError::DescriptionTooLong);
+    require!(
+        desc.len() <= AgentAccount::MAX_DESC_LEN,
+        SapError::DescriptionTooLong
+    );
     Ok(())
 }
 
 /// Validate agent_id: ≤128B.
 pub fn validate_agent_id(agent_id: &str) -> Result<()> {
-    require!(agent_id.len() <= AgentAccount::MAX_AGENT_ID_LEN, SapError::AgentIdTooLong);
+    require!(
+        agent_id.len() <= AgentAccount::MAX_AGENT_ID_LEN,
+        SapError::AgentIdTooLong
+    );
     Ok(())
 }
 
@@ -76,11 +82,8 @@ pub fn validate_capabilities(caps: &[Capability]) -> Result<()> {
         validate_capability_format(&cap.id)?;
 
         // Check for duplicates (O(n²) but n ≤ 10, acceptable onchain)
-        for j in (i + 1)..caps.len() {
-            require!(
-                cap.id != caps[j].id,
-                SapError::DuplicateCapability
-            );
+        for other in caps.iter().skip(i + 1) {
+            require!(cap.id != other.id, SapError::DuplicateCapability);
         }
     }
 
@@ -125,16 +128,13 @@ pub fn validate_volume_curve(curve: &[VolumeCurveBreakpoint]) -> Result<()> {
 /// that use other mints continue to operate (this validator is
 /// only invoked from `create_escrow*` instructions).
 /// v0.12 hardening: payment token allowlist for new commercial escrows.
-///
-/// Accepts ONLY USDC (mainnet or devnet). SOL native is NOT accepted.
-/// Existing pre-v0.10 escrows using other mints continue to operate
-/// (this validator is only invoked from create_escrow* instructions).
 pub fn validate_payment_token(token_mint: &Option<Pubkey>) -> Result<()> {
-    let mint = token_mint.ok_or(SapError::InvalidPaymentToken)?;
-    require!(
-        is_accepted_usdc_mint(&mint),
-        SapError::PaymentTokenNotAllowed
-    );
+    if let Some(mint) = token_mint {
+        require!(
+            is_accepted_usdc_mint(mint),
+            SapError::PaymentTokenNotAllowed
+        );
+    }
     Ok(())
 }
 
@@ -173,11 +173,8 @@ pub fn validate_pricing(pricing: &[PricingTier]) -> Result<()> {
         validate_pricing_tier(tier)?;
 
         // Check for duplicate tier IDs
-        for j in (i + 1)..pricing.len() {
-            require!(
-                tier.tier_id != pricing[j].tier_id,
-                SapError::DuplicateTierId
-            );
+        for other in pricing.iter().skip(i + 1) {
+            require!(tier.tier_id != other.tier_id, SapError::DuplicateTierId);
         }
     }
 
@@ -186,7 +183,10 @@ pub fn validate_pricing(pricing: &[PricingTier]) -> Result<()> {
 
 /// Validate x402 endpoint: starts with "https://", ≤MAX_URI_LEN.
 pub fn validate_x402_endpoint(endpoint: &str) -> Result<()> {
-    require!(endpoint.len() <= AgentAccount::MAX_URI_LEN, SapError::UriTooLong);
+    require!(
+        endpoint.len() <= AgentAccount::MAX_URI_LEN,
+        SapError::UriTooLong
+    );
     require!(
         endpoint.starts_with("https://"),
         SapError::InvalidX402Endpoint

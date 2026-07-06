@@ -85,14 +85,22 @@ describe("11 — v0.10 Hardening (audit fixes + stake-gate + token allowlist)", 
       const reg = await registerAgent(program, agentNoStake, globalPda, {
         name: "NoStakeAgent",
       });
-      const [escrowMissingStake] = findEscrowPda(reg.agentPda, client.publicKey);
+      const [escrowMissingStake] = findEscrowPda(
+        reg.agentPda,
+        client.publicKey
+      );
       const [stakeMissing] = findStakePda(reg.agentPda);
 
       await expectError(
         program.methods
           .createEscrow(
-            new BN(PRICE), new BN(10), new BN(DEPOSIT),
-            new BN(0), [], null, 9,
+            new BN(PRICE),
+            new BN(10),
+            new BN(DEPOSIT),
+            new BN(0),
+            [],
+            null,
+            9
           )
           .accountsStrict({
             depositor: client.publicKey,
@@ -103,15 +111,20 @@ describe("11 — v0.10 Hardening (audit fixes + stake-gate + token allowlist)", 
           })
           .signers([client])
           .rpc(),
-        "AccountNotInitialized", // anchor's error when init account missing
+        "AccountNotInitialized" // anchor's error when init account missing
       );
     });
 
     it("✓ accepts createEscrow when agent has stake ≥ MIN_STAKE", async () => {
       await program.methods
         .createEscrow(
-          new BN(PRICE), new BN(100), new BN(DEPOSIT),
-          new BN(0), [], null, 9,
+          new BN(PRICE),
+          new BN(100),
+          new BN(DEPOSIT),
+          new BN(0),
+          [],
+          null,
+          9
         )
         .accountsStrict({
           depositor: client.publicKey,
@@ -139,8 +152,13 @@ describe("11 — v0.10 Hardening (audit fixes + stake-gate + token allowlist)", 
       await expectError(
         program.methods
           .createEscrow(
-            new BN(PRICE), new BN(10), new BN(DEPOSIT),
-            new BN(0), [], fakeMint, 6,
+            new BN(PRICE),
+            new BN(10),
+            new BN(DEPOSIT),
+            new BN(0),
+            [],
+            fakeMint,
+            6
           )
           .accountsStrict({
             depositor: otherClient.publicKey,
@@ -151,7 +169,7 @@ describe("11 — v0.10 Hardening (audit fixes + stake-gate + token allowlist)", 
           })
           .signers([otherClient])
           .rpc(),
-        "PaymentTokenNotAllowed",
+        "PaymentTokenNotAllowed"
       );
     });
   });
@@ -166,11 +184,14 @@ describe("11 — v0.10 Hardening (audit fixes + stake-gate + token allowlist)", 
       await expectError(
         program.methods
           .createEscrow(
-            new BN(PRICE), new BN(100), new BN(DEPOSIT),
+            new BN(PRICE),
+            new BN(100),
+            new BN(DEPOSIT),
             new BN(0),
             // PRICE → 2× PRICE — invalid (price must be non-increasing).
             [{ afterCalls: 50, pricePerCall: new BN(PRICE * 2) }],
-            null, 9,
+            null,
+            9
           )
           .accountsStrict({
             depositor: otherClient.publicKey,
@@ -181,7 +202,7 @@ describe("11 — v0.10 Hardening (audit fixes + stake-gate + token allowlist)", 
           })
           .signers([otherClient])
           .rpc(),
-        "VolumeCurveNotDescending",
+        "VolumeCurveNotDescending"
       );
     });
   });
@@ -228,7 +249,7 @@ describe("11 — v0.10 Hardening (audit fixes + stake-gate + token allowlist)", 
           })
           .signers([agentOwner])
           .rpc(),
-        "already in use", // System program init twice → "account already in use"
+        "already in use" // System program init twice → "account already in use"
       );
     });
   });
@@ -240,7 +261,7 @@ describe("11 — v0.10 Hardening (audit fixes + stake-gate + token allowlist)", 
         { callsToSettle: new BN(2), serviceHash: randomHash() },
       ];
       const batchRoot = computeBatchRoot(
-        settlements.map((s) => Buffer.from(s.serviceHash)),
+        settlements.map((s) => Buffer.from(s.serviceHash))
       );
       const [receiptPda] = findSettlementReceiptPda(escrowPda, batchRoot);
 
@@ -282,7 +303,7 @@ describe("11 — v0.10 Hardening (audit fixes + stake-gate + token allowlist)", 
           })
           .signers([agentOwner])
           .rpc(),
-        "InvalidReceiptProof",
+        "InvalidReceiptProof"
       );
     });
 
@@ -293,7 +314,7 @@ describe("11 — v0.10 Hardening (audit fixes + stake-gate + token allowlist)", 
         { callsToSettle: new BN(1), serviceHash: dup },
       ];
       const batchRoot = computeBatchRoot(
-        settlements.map((s) => Buffer.from(s.serviceHash)),
+        settlements.map((s) => Buffer.from(s.serviceHash))
       );
       const [receiptPda] = findSettlementReceiptPda(escrowPda, batchRoot);
 
@@ -310,7 +331,7 @@ describe("11 — v0.10 Hardening (audit fixes + stake-gate + token allowlist)", 
           })
           .signers([agentOwner])
           .rpc(),
-        "DuplicateServiceHash",
+        "DuplicateServiceHash"
       );
     });
   });

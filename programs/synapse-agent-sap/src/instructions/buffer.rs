@@ -1,7 +1,7 @@
-use anchor_lang::prelude::*;
-use crate::state::*;
-use crate::events::*;
 use crate::errors::SapError;
+use crate::events::*;
+use crate::state::*;
+use anchor_lang::prelude::*;
 
 // ═══════════════════════════════════════════════════════════════════
 //  SYNAPSE MEMORY BUFFER — Onchain Readable Session Cache
@@ -177,7 +177,8 @@ pub fn append_buffer_handler(
     // ── Append data & update metadata ──
     buffer.data.extend_from_slice(&data);
     buffer.total_size = new_total as u16;
-    buffer.num_entries = buffer.num_entries
+    buffer.num_entries = buffer
+        .num_entries
         .checked_add(1)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
     buffer.updated_at = clock.unix_timestamp;

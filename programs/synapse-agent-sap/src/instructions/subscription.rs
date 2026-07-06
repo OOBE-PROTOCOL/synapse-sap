@@ -1,8 +1,8 @@
+use crate::errors::SapError;
+use crate::events::*;
+use crate::state::*;
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
-use crate::state::*;
-use crate::events::*;
-use crate::errors::SapError;
 
 // ═══════════════════════════════════════════════════════════════════
 //  SUBSCRIPTIONS — Recurring Payment Channels
@@ -54,10 +54,13 @@ pub fn create_subscription_handler(
 
     if initial_deposit > 0 {
         system_program::transfer(
-            CpiContext::new(ctx.accounts.system_program.key(), system_program::Transfer {
-                from: ctx.accounts.subscriber.to_account_info(),
-                to: ctx.accounts.subscription.to_account_info(),
-            }),
+            CpiContext::new(
+                ctx.accounts.system_program.key(),
+                system_program::Transfer {
+                    from: ctx.accounts.subscriber.to_account_info(),
+                    to: ctx.accounts.subscription.to_account_info(),
+                },
+            ),
             initial_deposit,
         )?;
     }
@@ -78,7 +81,10 @@ pub fn create_subscription_handler(
     sub.started_at = clock.unix_timestamp;
     sub.last_claimed_at = clock.unix_timestamp;
     sub.cancelled_at = 0;
-    sub.next_due_at = clock.unix_timestamp.checked_add(interval_secs).ok_or(error!(SapError::ArithmeticOverflow))?;
+    sub.next_due_at = clock
+        .unix_timestamp
+        .checked_add(interval_secs)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
     sub.created_at = clock.unix_timestamp;
 
     emit!(SubscriptionCreatedEvent {
@@ -112,17 +118,26 @@ pub struct FundSubscriptionAccountConstraints<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn fund_subscription_handler(ctx: Context<FundSubscriptionAccountConstraints>, amount: u64) -> Result<()> {
+pub fn fund_subscription_handler(
+    ctx: Context<FundSubscriptionAccountConstraints>,
+    amount: u64,
+) -> Result<()> {
     system_program::transfer(
-        CpiContext::new(ctx.accounts.system_program.key(), system_program::Transfer {
-            from: ctx.accounts.subscriber.to_account_info(),
-            to: ctx.accounts.subscription.to_account_info(),
-        }),
+        CpiContext::new(
+            ctx.accounts.system_program.key(),
+            system_program::Transfer {
+                from: ctx.accounts.subscriber.to_account_info(),
+                to: ctx.accounts.subscription.to_account_info(),
+            },
+        ),
         amount,
     )?;
 
     let sub = &mut ctx.accounts.subscription;
-    sub.balance = sub.balance.checked_add(amount).ok_or(error!(SapError::ArithmeticOverflow))?;
+    sub.balance = sub
+        .balance
+        .checked_add(amount)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
     Ok(())
 }
 
@@ -175,7 +190,10 @@ pub fn claim_interval_handler(ctx: Context<ClaimIntervalAccountConstraints>) -> 
     } else {
         claimable_capped as u64
     };
-    require!(actual_intervals > 0, SapError::SubscriptionInsufficientBalance);
+    require!(
+        actual_intervals > 0,
+        SapError::SubscriptionInsufficientBalance
+    );
 
     let actual_amount = actual_intervals
         .checked_mul(sub.price_per_interval)
@@ -188,11 +206,26 @@ pub fn claim_interval_handler(ctx: Context<ClaimIntervalAccountConstraints>) -> 
     **wallet_info.try_borrow_mut_lamports()? += actual_amount;
 
     let sub = &mut ctx.accounts.subscription;
-    sub.balance = sub.balance.checked_sub(actual_amount).ok_or(error!(SapError::ArithmeticOverflow))?;
-    sub.total_paid = sub.total_paid.checked_add(actual_amount).ok_or(error!(SapError::ArithmeticOverflow))?;
-    sub.intervals_paid = sub.intervals_paid.checked_add(actual_intervals as u32).ok_or(error!(SapError::ArithmeticOverflow))?;
-    sub.last_claimed_at = sub.last_claimed_at.checked_add(actual_intervals as i64 * interval_secs).ok_or(error!(SapError::ArithmeticOverflow))?;
-    sub.next_due_at = sub.last_claimed_at.checked_add(interval_secs).ok_or(error!(SapError::ArithmeticOverflow))?;
+    sub.balance = sub
+        .balance
+        .checked_sub(actual_amount)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
+    sub.total_paid = sub
+        .total_paid
+        .checked_add(actual_amount)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
+    sub.intervals_paid = sub
+        .intervals_paid
+        .checked_add(actual_intervals as u32)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
+    sub.last_claimed_at = sub
+        .last_claimed_at
+        .checked_add(actual_intervals as i64 * interval_secs)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
+    sub.next_due_at = sub
+        .last_claimed_at
+        .checked_add(interval_secs)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
 
     emit!(SubscriptionClaimedEvent {
         subscription: sub.key(),
@@ -233,7 +266,9 @@ pub struct CancelSubscriptionAccountConstraints<'info> {
     pub subscription: Account<'info, Subscription>,
 }
 
-pub fn cancel_subscription_handler(ctx: Context<CancelSubscriptionAccountConstraints>) -> Result<()> {
+pub fn cancel_subscription_handler(
+    ctx: Context<CancelSubscriptionAccountConstraints>,
+) -> Result<()> {
     let clock = Clock::get()?;
 
     let sub_info = ctx.accounts.subscription.to_account_info();
@@ -242,11 +277,14 @@ pub fn cancel_subscription_handler(ctx: Context<CancelSubscriptionAccountConstra
 
     // M3 fix: Pay earned-but-unclaimed intervals to agent first
     let interval_secs = Subscription::interval_seconds(ctx.accounts.subscription.billing_interval);
-    let elapsed = clock.unix_timestamp.saturating_sub(ctx.accounts.subscription.last_claimed_at);
+    let elapsed = clock
+        .unix_timestamp
+        .saturating_sub(ctx.accounts.subscription.last_claimed_at);
     let earned_intervals = elapsed / interval_secs;
-    let earned_amount = if earned_intervals > 0 && ctx.accounts.subscription.price_per_interval > 0 {
-        let due = (earned_intervals as u64)
-            .saturating_mul(ctx.accounts.subscription.price_per_interval);
+    let earned_amount = if earned_intervals > 0 && ctx.accounts.subscription.price_per_interval > 0
+    {
+        let due =
+            (earned_intervals as u64).saturating_mul(ctx.accounts.subscription.price_per_interval);
         due.min(ctx.accounts.subscription.balance)
     } else {
         0u64
@@ -259,7 +297,11 @@ pub fn cancel_subscription_handler(ctx: Context<CancelSubscriptionAccountConstra
     }
 
     // Refund remaining to subscriber
-    let refund = ctx.accounts.subscription.balance.saturating_sub(earned_amount);
+    let refund = ctx
+        .accounts
+        .subscription
+        .balance
+        .saturating_sub(earned_amount);
     if refund > 0 {
         **sub_info.try_borrow_mut_lamports()? -= refund;
         **subscriber_info.try_borrow_mut_lamports()? += refund;
@@ -304,6 +346,8 @@ pub struct CloseSubscriptionAccountConstraints<'info> {
     pub subscription: Account<'info, Subscription>,
 }
 
-pub fn close_subscription_handler(_ctx: Context<CloseSubscriptionAccountConstraints>) -> Result<()> {
+pub fn close_subscription_handler(
+    _ctx: Context<CloseSubscriptionAccountConstraints>,
+) -> Result<()> {
     Ok(())
 }

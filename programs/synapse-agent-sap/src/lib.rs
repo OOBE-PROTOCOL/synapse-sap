@@ -1,12 +1,14 @@
 #![allow(unexpected_cfgs)]
+#![allow(clippy::too_many_arguments, clippy::diverging_sub_expression)]
 use anchor_lang::prelude::*;
 #[cfg(not(feature = "no-entrypoint"))]
 use solana_security_txt::security_txt;
 
-pub mod state;
-pub mod instructions;
-pub mod events;
+pub mod constants;
 pub mod errors;
+pub mod events;
+pub mod instructions;
+pub mod state;
 pub mod validator;
 
 use instructions::*;
@@ -366,7 +368,9 @@ pub mod synapse_agent_sap {
     }
 
     /// Revoke a delegate's authorization (closes PDA, returns rent).
-    pub fn revoke_vault_delegate(ctx: Context<RevokeVaultDelegateAccountConstraints>) -> Result<()> {
+    pub fn revoke_vault_delegate(
+        ctx: Context<RevokeVaultDelegateAccountConstraints>,
+    ) -> Result<()> {
         instructions::vault::revoke_vault_delegate_handler(ctx)
     }
 
@@ -756,9 +760,19 @@ pub mod synapse_agent_sap {
         arbiter: Option<Pubkey>,
     ) -> Result<()> {
         instructions::escrow_v2::create_escrow_v2_handler(
-            ctx, escrow_nonce, price_per_call, max_calls, initial_deposit,
-            expires_at, volume_curve, token_mint, token_decimals,
-            settlement_security, dispute_window_slots, co_signer, arbiter,
+            ctx,
+            escrow_nonce,
+            price_per_call,
+            max_calls,
+            initial_deposit,
+            expires_at,
+            volume_curve,
+            token_mint,
+            token_decimals,
+            settlement_security,
+            dispute_window_slots,
+            co_signer,
+            arbiter,
         )
     }
 
@@ -778,7 +792,12 @@ pub mod synapse_agent_sap {
         calls_to_settle: u64,
         service_hash: [u8; 32],
     ) -> Result<()> {
-        instructions::escrow_v2::settle_calls_v2_handler(ctx, escrow_nonce, calls_to_settle, service_hash)
+        instructions::escrow_v2::settle_calls_v2_handler(
+            ctx,
+            escrow_nonce,
+            calls_to_settle,
+            service_hash,
+        )
     }
 
     /// Create PendingSettlement PDA (DisputeWindow mode).
@@ -788,9 +807,14 @@ pub mod synapse_agent_sap {
         calls_to_settle: u64,
         amount: u64,
         service_hash: [u8; 32],
-        receipt_merkle_root: [u8; 32],
     ) -> Result<()> {
-        instructions::escrow_v2::create_pending_settlement_handler(ctx, settlement_index, calls_to_settle, amount, service_hash, receipt_merkle_root)
+        instructions::escrow_v2::create_pending_settlement_handler(
+            ctx,
+            settlement_index,
+            calls_to_settle,
+            amount,
+            service_hash,
+        )
     }
 
     /// Finalize settlement after dispute window. Permissionless crank.
@@ -844,7 +868,9 @@ pub mod synapse_agent_sap {
     }
 
     /// Close finalized pending settlement PDA. Reclaim rent.
-    pub fn close_pending_settlement(ctx: Context<ClosePendingSettlementAccountConstraints>) -> Result<()> {
+    pub fn close_pending_settlement(
+        ctx: Context<ClosePendingSettlementAccountConstraints>,
+    ) -> Result<()> {
         instructions::dispute::close_pending_settlement_handler(ctx)
     }
 
@@ -865,7 +891,14 @@ pub mod synapse_agent_sap {
         period_start: i64,
         period_end: i64,
     ) -> Result<()> {
-        instructions::receipt::inscribe_receipt_batch_handler(ctx, batch_index, merkle_root, call_count, period_start, period_end)
+        instructions::receipt::inscribe_receipt_batch_handler(
+            ctx,
+            batch_index,
+            merkle_root,
+            call_count,
+            period_start,
+            period_end,
+        )
     }
 
     /// Agent submits receipt proofs during dispute resolution.
@@ -901,21 +934,26 @@ pub mod synapse_agent_sap {
     }
 
     /// Deposit more SOL into agent stake.
-    pub fn deposit_stake(
-        ctx: Context<DepositStakeAccountConstraints>,
-        amount: u64,
-    ) -> Result<()> {
+    pub fn deposit_stake(ctx: Context<DepositStakeAccountConstraints>, amount: u64) -> Result<()> {
         instructions::staking::deposit_stake_handler(ctx, amount)
     }
 
     /// Request unstake — starts 7-day cooldown. Supports partial unstake.
-    pub fn request_unstake(ctx: Context<RequestUnstakeAccountConstraints>, amount: u64) -> Result<()> {
+    pub fn request_unstake(
+        ctx: Context<RequestUnstakeAccountConstraints>,
+        amount: u64,
+    ) -> Result<()> {
         instructions::staking::request_unstake_handler(ctx, amount)
     }
 
     /// Complete unstake after cooldown period.
     pub fn complete_unstake(ctx: Context<CompleteUnstakeAccountConstraints>) -> Result<()> {
         instructions::staking::complete_unstake_handler(ctx)
+    }
+
+    /// Recover stake collateral after an agent has already been closed.
+    pub fn close_stake(ctx: Context<CloseStakeAccountConstraints>) -> Result<()> {
+        instructions::staking::close_stake_handler(ctx)
     }
 
     // ═══════════════════════════════════════════════
@@ -934,7 +972,13 @@ pub mod synapse_agent_sap {
         billing_interval: u8,
         initial_deposit: u64,
     ) -> Result<()> {
-        instructions::subscription::create_subscription_handler(ctx, sub_id, price_per_interval, billing_interval, initial_deposit)
+        instructions::subscription::create_subscription_handler(
+            ctx,
+            sub_id,
+            price_per_interval,
+            billing_interval,
+            initial_deposit,
+        )
     }
 
     /// Fund subscription with additional SOL.
@@ -968,10 +1012,7 @@ pub mod synapse_agent_sap {
     // ═══════════════════════════════════════════════
 
     /// Init counter shard for a parent account.
-    pub fn init_shard(
-        ctx: Context<InitShardAccountConstraints>,
-        shard_index: u8,
-    ) -> Result<()> {
+    pub fn init_shard(ctx: Context<InitShardAccountConstraints>, shard_index: u8) -> Result<()> {
         instructions::shards::init_shard_handler(ctx, shard_index)
     }
 

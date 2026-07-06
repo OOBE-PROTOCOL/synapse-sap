@@ -1,7 +1,7 @@
-use anchor_lang::prelude::*;
-use crate::state::*;
-use crate::events::*;
 use crate::errors::SapError;
+use crate::events::*;
+use crate::state::*;
+use anchor_lang::prelude::*;
 
 // ═══════════════════════════════════════════════════════════════════
 //  register_plugin — Create a plugin slot PDA for an agent
@@ -44,8 +44,7 @@ pub fn handle_register_plugin(
     );
 
     // Convert u8 → PluginType enum
-    let pt = PluginType::from_u8(plugin_type)
-        .ok_or(error!(SapError::InvalidPluginType))?;
+    let pt = PluginType::from_u8(plugin_type).ok_or(error!(SapError::InvalidPluginType))?;
 
     let clock = Clock::get()?;
 
@@ -107,7 +106,11 @@ pub fn close_plugin_handler(ctx: Context<ClosePluginAccountConstraints>) -> Resu
     let agent = &mut ctx.accounts.agent;
 
     // Remove from active_plugins list
-    if let Some(pos) = agent.active_plugins.iter().position(|p| p.pda == plugin_key) {
+    if let Some(pos) = agent
+        .active_plugins
+        .iter()
+        .position(|p| p.pda == plugin_key)
+    {
         agent.active_plugins.swap_remove(pos);
     }
     agent.updated_at = Clock::get()?.unix_timestamp;

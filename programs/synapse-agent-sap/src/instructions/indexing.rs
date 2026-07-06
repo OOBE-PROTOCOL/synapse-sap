@@ -1,7 +1,7 @@
+use crate::errors::SapError;
+use crate::state::*;
 use anchor_lang::prelude::*;
 use solana_sha256_hasher::hash;
-use crate::state::*;
-use crate::errors::SapError;
 
 // ═══════════════════════════════════════════════════════════════════
 //  init_capability_index — Create a new index PDA for a capability
@@ -50,9 +50,10 @@ pub fn init_capability_handler(
 ) -> Result<()> {
     // Verify hash matches capability_id
     let computed: [u8; 32] = hash(capability_id.as_bytes()).to_bytes();
+    require!(computed == capability_hash, SapError::InvalidCapabilityHash);
     require!(
-        computed == capability_hash,
-        SapError::InvalidCapabilityHash
+        agent_has_capability_hash(&ctx.accounts.agent, &capability_hash),
+        SapError::AgentCapabilityMismatch
     );
 
     let agent_pda = ctx.accounts.agent.key();
@@ -65,8 +66,12 @@ pub fn init_capability_handler(
     index.total_pages = 0;
     index.last_updated = clock.unix_timestamp;
 
-    ctx.accounts.global_registry.total_capabilities = ctx.accounts.global_registry.total_capabilities
-        .checked_add(1).ok_or(error!(SapError::ArithmeticOverflow))?;
+    ctx.accounts.global_registry.total_capabilities = ctx
+        .accounts
+        .global_registry
+        .total_capabilities
+        .checked_add(1)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
 
     Ok(())
 }
@@ -98,10 +103,18 @@ pub struct AddToCapabilityIndexAccountConstraints<'info> {
 
 pub fn add_to_capability_handler(
     ctx: Context<AddToCapabilityIndexAccountConstraints>,
-    _capability_hash: [u8; 32],
+    capability_hash: [u8; 32],
 ) -> Result<()> {
     let agent_pda = ctx.accounts.agent.key();
     let index = &mut ctx.accounts.capability_index;
+    require!(
+        index.capability_hash == capability_hash,
+        SapError::InvalidCapabilityHash
+    );
+    require!(
+        agent_has_capability_hash(&ctx.accounts.agent, &capability_hash),
+        SapError::AgentCapabilityMismatch
+    );
     require!(
         index.agents.len() < CapabilityIndex::MAX_AGENTS,
         SapError::CapabilityIndexFull
@@ -202,9 +215,10 @@ pub fn init_protocol_handler(
     protocol_hash: [u8; 32],
 ) -> Result<()> {
     let computed: [u8; 32] = hash(protocol_id.as_bytes()).to_bytes();
+    require!(computed == protocol_hash, SapError::InvalidProtocolHash);
     require!(
-        computed == protocol_hash,
-        SapError::InvalidProtocolHash
+        agent_has_protocol_hash(&ctx.accounts.agent, &protocol_hash),
+        SapError::AgentProtocolMismatch
     );
 
     let agent_pda = ctx.accounts.agent.key();
@@ -217,8 +231,12 @@ pub fn init_protocol_handler(
     index.total_pages = 0;
     index.last_updated = clock.unix_timestamp;
 
-    ctx.accounts.global_registry.total_protocols = ctx.accounts.global_registry.total_protocols
-        .checked_add(1).ok_or(error!(SapError::ArithmeticOverflow))?;
+    ctx.accounts.global_registry.total_protocols = ctx
+        .accounts
+        .global_registry
+        .total_protocols
+        .checked_add(1)
+        .ok_or(error!(SapError::ArithmeticOverflow))?;
 
     Ok(())
 }
@@ -250,10 +268,18 @@ pub struct AddToProtocolIndexAccountConstraints<'info> {
 
 pub fn add_to_protocol_handler(
     ctx: Context<AddToProtocolIndexAccountConstraints>,
-    _protocol_hash: [u8; 32],
+    protocol_hash: [u8; 32],
 ) -> Result<()> {
     let agent_pda = ctx.accounts.agent.key();
     let index = &mut ctx.accounts.protocol_index;
+    require!(
+        index.protocol_hash == protocol_hash,
+        SapError::InvalidProtocolHash
+    );
+    require!(
+        agent_has_protocol_hash(&ctx.accounts.agent, &protocol_hash),
+        SapError::AgentProtocolMismatch
+    );
     require!(
         index.agents.len() < ProtocolIndex::MAX_AGENTS,
         SapError::ProtocolIndexFull
@@ -350,7 +376,11 @@ pub fn close_capability_index_handler(
     ctx: Context<CloseCapabilityIndexAccountConstraints>,
     _capability_hash: [u8; 32],
 ) -> Result<()> {
-    ctx.accounts.global_registry.total_capabilities = ctx.accounts.global_registry.total_capabilities.saturating_sub(1);
+    ctx.accounts.global_registry.total_capabilities = ctx
+        .accounts
+        .global_registry
+        .total_capabilities
+        .saturating_sub(1);
     Ok(())
 }
 
@@ -394,8 +424,26 @@ pub fn close_protocol_index_handler(
     ctx: Context<CloseProtocolIndexAccountConstraints>,
     _protocol_hash: [u8; 32],
 ) -> Result<()> {
-    ctx.accounts.global_registry.total_protocols = ctx.accounts.global_registry.total_protocols.saturating_sub(1);
+    ctx.accounts.global_registry.total_protocols = ctx
+        .accounts
+        .global_registry
+        .total_protocols
+        .saturating_sub(1);
     Ok(())
+}
+
+fn agent_has_capability_hash(agent: &AgentAccount, capability_hash: &[u8; 32]) -> bool {
+    agent
+        .capabilities
+        .iter()
+        .any(|capability| hash(capability.id.as_bytes()).to_bytes() == *capability_hash)
+}
+
+fn agent_has_protocol_hash(agent: &AgentAccount, protocol_hash: &[u8; 32]) -> bool {
+    agent
+        .protocols
+        .iter()
+        .any(|protocol| hash(protocol.as_bytes()).to_bytes() == *protocol_hash)
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -502,8 +550,7 @@ pub fn add_to_tool_category_handler(
     let index = &mut ctx.accounts.tool_category_index;
 
     // Verify tool category matches the index
-    let expected = ToolCategory::from_u8(category)
-        .ok_or(error!(SapError::InvalidToolCategory))?;
+    let expected = ToolCategory::from_u8(category).ok_or(error!(SapError::InvalidToolCategory))?;
     require!(tool.category == expected, SapError::ToolCategoryMismatch);
 
     require!(

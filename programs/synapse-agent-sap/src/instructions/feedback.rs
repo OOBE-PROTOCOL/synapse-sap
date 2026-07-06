@@ -1,7 +1,7 @@
-use anchor_lang::prelude::*;
-use crate::state::*;
-use crate::events::*;
 use crate::errors::SapError;
+use crate::events::*;
+use crate::state::*;
+use anchor_lang::prelude::*;
 
 // ═══════════════════════════════════════════════════════════════════
 //  give_feedback — Create trustless on-chain feedback
@@ -47,7 +47,10 @@ pub fn give_handler(
     comment_hash: Option<[u8; 32]>,
 ) -> Result<()> {
     require!(score <= 1000, SapError::InvalidFeedbackScore);
-    require!(tag.len() <= FeedbackAccount::MAX_TAG_LEN, SapError::TagTooLong);
+    require!(
+        tag.len() <= FeedbackAccount::MAX_TAG_LEN,
+        SapError::TagTooLong
+    );
 
     let clock = Clock::get()?;
 
@@ -65,22 +68,28 @@ pub fn give_handler(
 
     // ── Recalculate agent reputation (incremental weighted average) ──
     let agent = &mut ctx.accounts.agent;
-    agent.reputation_sum = agent.reputation_sum
+    agent.reputation_sum = agent
+        .reputation_sum
         .checked_add(score as u64)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
-    agent.total_feedbacks = agent.total_feedbacks
+    agent.total_feedbacks = agent
+        .total_feedbacks
         .checked_add(1)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
     // reputation_score is 0-10000 (2 decimal precision)
     // score is 0-1000, so multiply by 10 for the extra decimal
-    agent.reputation_score = (agent.reputation_sum
+    agent.reputation_score = (agent
+        .reputation_sum
         .checked_mul(10)
         .ok_or(error!(SapError::ArithmeticOverflow))?
         / agent.total_feedbacks as u64) as u32;
     agent.updated_at = clock.unix_timestamp;
 
     // ── Update global stats ──
-    ctx.accounts.global_registry.total_feedbacks = ctx.accounts.global_registry.total_feedbacks
+    ctx.accounts.global_registry.total_feedbacks = ctx
+        .accounts
+        .global_registry
+        .total_feedbacks
         .checked_add(1)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
 
@@ -124,10 +133,16 @@ pub fn handle_update_feedback(
     comment_hash: Option<[u8; 32]>,
 ) -> Result<()> {
     require!(new_score <= 1000, SapError::InvalidFeedbackScore);
-    require!(!ctx.accounts.feedback.is_revoked, SapError::FeedbackAlreadyRevoked);
+    require!(
+        !ctx.accounts.feedback.is_revoked,
+        SapError::FeedbackAlreadyRevoked
+    );
 
     if let Some(ref t) = new_tag {
-        require!(t.len() <= FeedbackAccount::MAX_TAG_LEN, SapError::TagTooLong);
+        require!(
+            t.len() <= FeedbackAccount::MAX_TAG_LEN,
+            SapError::TagTooLong
+        );
     }
 
     let clock = Clock::get()?;
@@ -146,11 +161,13 @@ pub fn handle_update_feedback(
 
     // ── Recalculate agent reputation ──
     let agent = &mut ctx.accounts.agent;
-    agent.reputation_sum = agent.reputation_sum
+    agent.reputation_sum = agent
+        .reputation_sum
         .saturating_sub(old_score as u64)
         .checked_add(new_score as u64)
         .ok_or(error!(SapError::ArithmeticOverflow))?;
-    agent.reputation_score = (agent.reputation_sum
+    agent.reputation_score = (agent
+        .reputation_sum
         .checked_mul(10)
         .ok_or(error!(SapError::ArithmeticOverflow))?
         / agent.total_feedbacks as u64) as u32;
@@ -189,7 +206,10 @@ pub struct RevokeFeedbackAccountConstraints<'info> {
 }
 
 pub fn revoke_handler(ctx: Context<RevokeFeedbackAccountConstraints>) -> Result<()> {
-    require!(!ctx.accounts.feedback.is_revoked, SapError::FeedbackAlreadyRevoked);
+    require!(
+        !ctx.accounts.feedback.is_revoked,
+        SapError::FeedbackAlreadyRevoked
+    );
 
     let clock = Clock::get()?;
     let score = ctx.accounts.feedback.score;
@@ -203,7 +223,8 @@ pub fn revoke_handler(ctx: Context<RevokeFeedbackAccountConstraints>) -> Result<
     agent.reputation_sum = agent.reputation_sum.saturating_sub(score as u64);
     agent.total_feedbacks = agent.total_feedbacks.saturating_sub(1);
     agent.reputation_score = if agent.total_feedbacks > 0 {
-        (agent.reputation_sum
+        (agent
+            .reputation_sum
             .checked_mul(10)
             .ok_or(error!(SapError::ArithmeticOverflow))?
             / agent.total_feedbacks as u64) as u32
@@ -253,6 +274,10 @@ pub struct CloseFeedbackAccountConstraints<'info> {
 }
 
 pub fn close_feedback_handler(ctx: Context<CloseFeedbackAccountConstraints>) -> Result<()> {
-    ctx.accounts.global_registry.total_feedbacks = ctx.accounts.global_registry.total_feedbacks.saturating_sub(1);
+    ctx.accounts.global_registry.total_feedbacks = ctx
+        .accounts
+        .global_registry
+        .total_feedbacks
+        .saturating_sub(1);
     Ok(())
 }
