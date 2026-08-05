@@ -8,6 +8,7 @@
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
     "sync:idl": "node scripts/sync-idl-artifacts.mjs",
     "verify:idl": "node scripts/verify-idl-artifacts.mjs",
+    "verify:idl:checked-in": "node scripts/verify-idl-artifacts.mjs --checked-in-only",
     "audit:onchain-idl": "node scripts/audit-onchain-idl.mjs",
     "preflight:mainnet": "node scripts/preflight-mainnet.mjs",
     "smoke:devnet:sol": "node scripts/devnet-smoke-sol.js",

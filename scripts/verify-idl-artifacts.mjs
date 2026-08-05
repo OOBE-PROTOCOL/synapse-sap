@@ -8,13 +8,17 @@ import process from "node:process";
 const ROOT = process.cwd();
 const PROGRAM_ID = "SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ";
 
-const IDL_PATHS = [
-  "target/idl/synapse_agent_sap.json",
+const GENERATED_IDL_PATH = "target/idl/synapse_agent_sap.json";
+const CHECKED_IN_IDL_PATHS = [
   "idl/synapse_agent_sap.json",
   "synapse-sap-sdk/idl/synapse_agent_sap.json",
   "synapse-sap-sdk/src/idl/synapse_agent_sap.json",
   "synapse-sap-sdk/src/idl.json",
 ];
+const CHECKED_IN_ONLY = process.argv.includes("--checked-in-only");
+const IDL_PATHS = CHECKED_IN_ONLY
+  ? CHECKED_IN_IDL_PATHS
+  : [GENERATED_IDL_PATH, ...CHECKED_IN_IDL_PATHS];
 
 const CRITICAL_INSTRUCTIONS = {
   register_agent: {

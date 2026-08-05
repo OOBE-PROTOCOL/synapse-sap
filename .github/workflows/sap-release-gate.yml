@@ -59,7 +59,7 @@ jobs:
 
       - name: Local release gates
         run: |
-          yarn verify:idl
+          yarn verify:idl:checked-in
           cargo fmt --check
           yarn lint
 

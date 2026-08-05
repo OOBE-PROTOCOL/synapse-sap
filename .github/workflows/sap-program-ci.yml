@@ -73,7 +73,7 @@ jobs:
           solana config set --url localhost --keypair "$HOME/.config/solana/id.json"
 
       - name: Verify checked-in IDL artifacts
-        run: yarn verify:idl
+        run: yarn verify:idl:checked-in
 
       - name: Format and lint
         run: |

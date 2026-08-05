@@ -50,7 +50,7 @@ jobs:
         run: yarn install --frozen-lockfile
 
       - name: Verify local IDL artifacts
-        run: yarn verify:idl
+        run: yarn verify:idl:checked-in
 
       - name: Build program
         run: anchor build --ignore-keys
