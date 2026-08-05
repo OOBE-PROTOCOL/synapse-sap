@@ -1,0 +1,65 @@
+name: SAP Devnet Preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      rpc_url:
+        description: "Optional devnet RPC URL. Defaults to Solana public devnet."
+        required: false
+        type: string
+
+concurrency:
+  group: sap-devnet-preflight
+  cancel-in-progress: false
+
+env:
+  AGAVE_VERSION: "3.1.10"
+  ANCHOR_VERSION: "1.0.0"
+  SAP_RPC: ${{ inputs.rpc_url || 'https://api.devnet.solana.com' }}
+
+jobs:
+  devnet-preflight:
+    name: Read-only devnet IDL and ProgramData gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: yarn
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Agave CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v${AGAVE_VERSION}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor CLI
+        run: cargo install --git https://github.com/coral-xyz/anchor --tag "v${ANCHOR_VERSION}" anchor-cli --locked
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Verify local IDL artifacts
+        run: yarn verify:idl
+
+      - name: Build program
+        run: anchor build --ignore-keys
+
+      - name: Verify generated IDL artifacts
+        run: yarn verify:idl
+
+      - name: Audit devnet Program Metadata IDL
+        run: yarn audit:onchain-idl -- --network devnet --rpc "$SAP_RPC" --strict
+
+      - name: Devnet preflight
+        run: yarn preflight:mainnet --network devnet --rpc "$SAP_RPC"

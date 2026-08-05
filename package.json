@@ -5,7 +5,14 @@
   "license": "MIT",
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
-    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
+    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
+    "sync:idl": "node scripts/sync-idl-artifacts.mjs",
+    "verify:idl": "node scripts/verify-idl-artifacts.mjs",
+    "audit:onchain-idl": "node scripts/audit-onchain-idl.mjs",
+    "preflight:mainnet": "node scripts/preflight-mainnet.mjs",
+    "smoke:devnet:sol": "node scripts/devnet-smoke-sol.js",
+    "smoke:devnet:usdc": "node scripts/devnet-smoke-usdc.js",
+    "verify:local": "yarn verify:idl && cargo fmt --check && yarn lint"
   },
   "socket": {
     "ignore": [
@@ -13,7 +20,9 @@
     ]
   },
   "dependencies": {
-    "@coral-xyz/anchor": "^0.32.1"
+    "@coral-xyz/anchor": "^0.32.1",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4"
   },
   "devDependencies": {
     "@types/bn.js": "^5.1.0",

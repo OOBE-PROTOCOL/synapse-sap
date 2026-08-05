@@ -1,0 +1,136 @@
+name: SAP Program CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "release/**"
+      - "codex/**"
+    tags:
+      - "v*"
+      - "program-v*"
+
+concurrency:
+  group: sap-program-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AGAVE_VERSION: "3.1.10"
+  ANCHOR_VERSION: "1.0.0"
+  PROGRAM_ID: "SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  program-ci:
+    name: Program build, IDL, and local validator tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: yarn
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Install Agave CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v${AGAVE_VERSION}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor CLI
+        run: cargo install --git https://github.com/coral-xyz/anchor --tag "v${ANCHOR_VERSION}" anchor-cli --locked
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Create CI wallet
+        run: |
+          mkdir -p "$HOME/.config/solana"
+          solana-keygen new --no-bip39-passphrase --silent --force --outfile "$HOME/.config/solana/id.json"
+          solana config set --url localhost --keypair "$HOME/.config/solana/id.json"
+
+      - name: Verify checked-in IDL artifacts
+        run: yarn verify:idl
+
+      - name: Format and lint
+        run: |
+          cargo fmt --check
+          yarn lint
+
+      - name: Build program and generated IDL
+        run: anchor build --ignore-keys
+
+      - name: Verify generated IDL artifacts
+        run: yarn verify:idl
+
+      - name: Start local validator with SAP program
+        run: |
+          solana-test-validator \
+            --reset \
+            --quiet \
+            --rpc-port 8898 \
+            --faucet-port 9901 \
+            --ledger target/test-ledger-ci \
+            --bpf-program "$PROGRAM_ID" target/deploy/synapse_agent_sap.so \
+            > target/test-ledger-ci.log 2>&1 &
+          echo $! > target/test-validator.pid
+          for i in {1..60}; do
+            if curl -sS -X POST http://127.0.0.1:8898 \
+              -H 'Content-Type: application/json' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' | grep -q 'ok'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat target/test-ledger-ci.log
+          exit 1
+
+      - name: Run Anchor TypeScript test suite
+        env:
+          ANCHOR_PROVIDER_URL: http://127.0.0.1:8898
+          ANCHOR_WALLET: ${{ github.workspace }}/.ci-wallet.json
+        run: |
+          cp "$HOME/.config/solana/id.json" .ci-wallet.json
+          yarn run ts-mocha -p ./tsconfig.json -t 1000000 "tests/**/*.ts"
+
+      - name: Stop local validator
+        if: always()
+        run: |
+          if [ -f target/test-validator.pid ]; then
+            kill "$(cat target/test-validator.pid)" || true
+          fi
+
+      - name: Upload program artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sap-program-artifacts
+          path: |
+            target/deploy/synapse_agent_sap.so
+            target/idl/synapse_agent_sap.json
+            target/types/synapse_agent_sap.ts
+            target/test-ledger-ci.log
+          if-no-files-found: ignore

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `migrate_pricing_menu` backfills the missing `AgentPricingMenu` PDA for
+  legacy agents registered before pricing menus were initialized at
+  `register_agent` time.
+- GitHub Actions release gates for program CI, local validator tests, devnet
+  smoke tests, mainnet read-only preflight, and release artifact checksums.
+
+### Fixed
+
+- Legacy agents with inline `AgentAccount.pricing` but no pricing-menu PDA can
+  be migrated instead of being forced to re-register, restoring `update_agent`,
+  `close_agent`, and `create_escrow_v2` compatibility.
+
 ## [1.0.0] - 2026-07-06
 
 First official stable release of the Synapse Agent Protocol on Solana.
@@ -57,7 +71,7 @@ and release tags.
 ## [0.2.0] — 2026-04-29 — Hardening Release
 
 > **Security & trust release.** All findings from the v0.10 internal audit
-> applied. Backward-compatible for *existing* on-chain accounts (PDA seeds
+> applied. Backward-compatible for _existing_ on-chain accounts (PDA seeds
 > unchanged) but **breaking for clients** that call `settle_calls`,
 > `settle_calls_v2`, `settle_batch`, `create_escrow`, `create_escrow_v2`,
 > or `add_vault_delegate`. SDK consumers must upgrade to
@@ -116,9 +130,10 @@ and release tags.
   in-flight state.
 - 8 live mainnet agents must call `init_stake` + `deposit_stake` before
   they can accept new escrows. Old escrows already opened against them
-  remain settleable (the stake check fires only at *creation* time).
-- SDK call sites must add `agentStake` (V1/V2 create), `settlementReceipt`
-  + `systemProgram` (settle), and pass `batchRoot` (settleBatch).
+  remain settleable (the stake check fires only at _creation_ time).
+- SDK call sites must add `agentStake` (V1/V2 create),
+  `settlementReceipt` and `systemProgram` (settle), and pass `batchRoot`
+  (settleBatch).
 - **Permanent collateral floor** (audit pass #2 — finding R1):
   `request_unstake` now requires the post-unstake balance to remain
   `>= MIN_STAKE`. To fully exit, agents will need a future `close_stake`

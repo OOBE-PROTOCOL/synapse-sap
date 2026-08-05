@@ -104,6 +104,23 @@ anchor test
 Runs all 10 test suites (187 tests) covering lifecycle, reputation, tools,
 vault and memory, escrow, attestations, indexing, ledger, security, and integration.
 
+## Production Gates
+
+Before devnet or mainnet upgrades, run the release gates in
+[docs/PRODUCTION_TESTING_PIPELINE.md](docs/PRODUCTION_TESTING_PIPELINE.md).
+
+At minimum:
+
+```bash
+yarn verify:local
+yarn audit:onchain-idl --network devnet
+yarn smoke:devnet:sol
+yarn smoke:devnet:usdc
+```
+
+Mainnet is blocked if Anchor 1.x Program Metadata is not fetchable or if any
+local IDL artifact diverges from `target/idl/synapse_agent_sap.json`.
+
 ## Deploy
 
 Deploy to devnet:
