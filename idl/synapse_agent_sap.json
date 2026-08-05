@@ -5537,6 +5537,90 @@
       ]
     },
     {
+      "name": "migrate_pricing_menu",
+      "docs": [
+        "Backfill or resync AgentPricingMenu for legacy agents."
+      ],
+      "discriminator": [
+        107,
+        6,
+        102,
+        41,
+        146,
+        211,
+        200,
+        87
+      ],
+      "accounts": [
+        {
+          "name": "wallet",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "agent"
+          ]
+        },
+        {
+          "name": "agent",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  97,
+                  112,
+                  95,
+                  97,
+                  103,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pricing_menu",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  97,
+                  112,
+                  95,
+                  112,
+                  114,
+                  105,
+                  99,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "open_session",
       "docs": [
         "Open session. session_hash = SHA-256 of deterministic ID."
@@ -8725,6 +8809,19 @@
         8,
         9,
         240
+      ]
+    },
+    {
+      "name": "PricingMenuMigratedEvent",
+      "discriminator": [
+        162,
+        49,
+        47,
+        78,
+        212,
+        204,
+        50,
+        206
       ]
     },
     {
@@ -12359,6 +12456,34 @@
           },
           {
             "name": "Custom"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PricingMenuMigratedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "agent",
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "pricing_menu",
+            "type": "pubkey"
+          },
+          {
+            "name": "tier_count",
+            "type": "u8"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
           }
         ]
       }

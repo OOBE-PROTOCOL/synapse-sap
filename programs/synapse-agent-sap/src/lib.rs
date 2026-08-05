@@ -46,8 +46,8 @@ pub mod synapse_agent_sap {
     // ═══════════════════════════════════════════════
 
     /// Register a new agent PDA with metadata.
-    pub fn register_agent(
-        ctx: Context<RegisterAgentAccountConstraints>,
+    pub fn register_agent<'info>(
+        ctx: Context<'info, RegisterAgentAccountConstraints<'info>>,
         name: String,
         description: String,
         capabilities: Vec<Capability>,
@@ -93,6 +93,11 @@ pub mod synapse_agent_sap {
             agent_uri,
             x402_endpoint,
         )
+    }
+
+    /// Backfill or resync AgentPricingMenu for legacy agents.
+    pub fn migrate_pricing_menu(ctx: Context<MigratePricingMenuAccountConstraints>) -> Result<()> {
+        instructions::agent::migrate_pricing_menu_handler(ctx)
     }
 
     /// Set is_active=false. Index entries filtered on read.

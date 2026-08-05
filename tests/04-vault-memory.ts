@@ -216,7 +216,7 @@ describe("04 — Memory Vault & Inscriptions", () => {
     await program.methods
       .addVaultDelegate(
         1, // permissions: inscribe only (bit 0)
-        new BN(0) // never expires
+        new BN(Math.floor(Date.now() / 1000) + 3600)
       )
       .accountsStrict({
         wallet: agentOwner.publicKey,

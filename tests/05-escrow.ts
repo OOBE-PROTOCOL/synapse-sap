@@ -1,34 +1,19 @@
 /**
- * SAP v2 — Test 05: Escrow & x402 Payments
+ * SAP v2 - Test 05: Escrow V2 & x402 Payments
  *
- * Escrow lifecycle: create → deposit → settle → batch settle →
- * withdraw → close.
- * Tests volume curve pricing, max_calls, expiry.
- *
- * Best Practice: L'escrow è un pre-pagamento trustless. L'agente
- * fa settle dopo aver servito la chiamata. Il client può prelevare
- * il saldo non utilizzato in qualsiasi momento.
+ * Escrow lifecycle: create -> deposit -> settle -> withdraw -> close.
+ * V1 escrow instructions are intentionally not used here.
  */
 
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { SynapseAgentSap } from "../target/types/synapse_agent_sap";
-import {
-  Keypair,
-  SystemProgram,
-  PublicKey,
-  LAMPORTS_PER_SOL,
-} from "@solana/web3.js";
+import { Keypair, SystemProgram, PublicKey } from "@solana/web3.js";
 import { expect } from "chai";
 import { BN } from "bn.js";
 import {
-  findGlobalPda,
-  findAgentPda,
-  findStatsPda,
-  findEscrowPda,
-  findStakePda,
-  findSettlementReceiptPda,
-  computeBatchRoot,
+  findEscrowV2Pda,
+  PROTOCOL_TREASURY,
   airdrop,
   ensureGlobalInitialized,
   registerAgent,
@@ -37,7 +22,7 @@ import {
   expectError,
 } from "./helpers";
 
-describe("05 — Escrow & x402 Payments", () => {
+describe("05 - Escrow V2 & x402 Payments", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
   const program = anchor.workspace.synapseAgentSap as Program<SynapseAgentSap>;
@@ -50,11 +35,22 @@ describe("05 — Escrow & x402 Payments", () => {
   let globalPda: PublicKey;
   let agentPda: PublicKey;
   let statsPda: PublicKey;
+  let pricingPda: PublicKey;
   let stakePda: PublicKey;
   let escrowPda: PublicKey;
+  let escrowNonce = 1;
 
-  const PRICE_PER_CALL = 100_000; // 0.0001 SOL
-  const INITIAL_DEPOSIT = 10 * PRICE_PER_CALL; // 10 calls worth
+  const PRICE_PER_CALL = 1_000_000;
+  const INITIAL_DEPOSIT = 10 * PRICE_PER_CALL;
+  const PROTOCOL_FEE_BPS = 50;
+
+  const protocolFee = (amount: number) =>
+    Math.floor((amount * PROTOCOL_FEE_BPS) / 10_000);
+
+  const coSignedRemainingAccounts = () => [
+    { pubkey: PROTOCOL_TREASURY, isWritable: true, isSigner: false },
+    { pubkey: client.publicKey, isWritable: false, isSigner: true },
+  ];
 
   before(async () => {
     await Promise.all([
@@ -68,39 +64,45 @@ describe("05 — Escrow & x402 Payments", () => {
     });
     agentPda = result.agentPda;
     statsPda = result.statsPda;
-    // v0.10.0 — stake-gate: bootstrap the agent's stake before any escrow.
+    pricingPda = result.pricingPda;
     const stakeRes = await initAgentStake(program, agentOwner);
     stakePda = stakeRes.stakePda;
   });
 
-  // ── 1. Create Escrow ──
-  it("Client crea un escrow con volume curve", async () => {
-    [escrowPda] = findEscrowPda(agentPda, client.publicKey);
+  it("Client crea un escrow V2 CoSigned con volume curve", async () => {
+    [escrowPda] = findEscrowV2Pda(agentPda, client.publicKey, escrowNonce);
 
     await program.methods
-      .createEscrow(
-        new BN(PRICE_PER_CALL), // price_per_call
-        new BN(100), // max_calls (100 max)
-        new BN(INITIAL_DEPOSIT), // initial_deposit
-        new BN(0), // expires_at (never)
+      .createEscrowV2(
+        new BN(escrowNonce),
+        new BN(PRICE_PER_CALL),
+        new BN(100),
+        new BN(INITIAL_DEPOSIT),
+        new BN(0),
         [
-          { afterCalls: 50, pricePerCall: new BN(80_000) }, // 20% discount after 50
-          { afterCalls: 100, pricePerCall: new BN(60_000) }, // 40% discount after 100
+          { afterCalls: 50, pricePerCall: new BN(800_000) },
+          { afterCalls: 100, pricePerCall: new BN(600_000) },
         ],
-        null, // token_mint (SOL)
-        9 // token_decimals
+        null,
+        9,
+        1,
+        new BN(0),
+        client.publicKey,
+        null
       )
       .accountsStrict({
         depositor: client.publicKey,
         agent: agentPda,
         agentStake: stakePda,
+        agentStats: statsPda,
+        pricingMenu: pricingPda,
         escrow: escrowPda,
         systemProgram: SystemProgram.programId,
       })
       .signers([client])
       .rpc();
 
-    const escrow = await program.account.escrowAccount.fetch(escrowPda);
+    const escrow = await program.account.escrowAccountV2.fetch(escrowPda);
     expect(escrow.balance.toNumber()).to.equal(INITIAL_DEPOSIT);
     expect(escrow.totalDeposited.toNumber()).to.equal(INITIAL_DEPOSIT);
     expect(escrow.pricePerCall.toNumber()).to.equal(PRICE_PER_CALL);
@@ -108,13 +110,11 @@ describe("05 — Escrow & x402 Payments", () => {
     expect(escrow.totalCallsSettled.toNumber()).to.equal(0);
     expect(escrow.volumeCurve).to.have.length(2);
     expect(escrow.depositor.toBase58()).to.equal(client.publicKey.toBase58());
-    // Note: totalEscrows è DEPRECATED — non più aggiornato dal programma
   });
 
-  // ── 2. Deposit More ──
   it("Client deposita fondi aggiuntivi", async () => {
     await program.methods
-      .depositEscrow(new BN(5 * PRICE_PER_CALL))
+      .depositEscrowV2(new BN(escrowNonce), new BN(5 * PRICE_PER_CALL))
       .accountsStrict({
         depositor: client.publicKey,
         escrow: escrowPda,
@@ -123,82 +123,72 @@ describe("05 — Escrow & x402 Payments", () => {
       .signers([client])
       .rpc();
 
-    const escrow = await program.account.escrowAccount.fetch(escrowPda);
+    const escrow = await program.account.escrowAccountV2.fetch(escrowPda);
     expect(escrow.balance.toNumber()).to.equal(15 * PRICE_PER_CALL);
     expect(escrow.totalDeposited.toNumber()).to.equal(15 * PRICE_PER_CALL);
   });
 
-  // ── 3. Settle Calls (agent claims payment) ──
   it("Agent fa settle di 3 chiamate", async () => {
     const balanceBefore = await connection.getBalance(agentOwner.publicKey);
     const svcHash = randomHash();
-    const [receiptPda] = findSettlementReceiptPda(escrowPda, svcHash);
+    const amount = 3 * PRICE_PER_CALL;
 
     await program.methods
-      .settleCalls(
-        new BN(3), // calls_to_settle
-        svcHash // service_hash (proof of work)
-      )
+      .settleCallsV2(new BN(escrowNonce), new BN(3), svcHash)
       .accountsStrict({
         wallet: agentOwner.publicKey,
         agent: agentPda,
         agentStats: statsPda,
         escrow: escrowPda,
-        settlementReceipt: receiptPda,
         systemProgram: SystemProgram.programId,
       })
-      .signers([agentOwner])
+      .remainingAccounts(coSignedRemainingAccounts())
+      .signers([agentOwner, client])
       .rpc();
 
-    const escrow = await program.account.escrowAccount.fetch(escrowPda);
-    // 3 calls at base price = 3 * 100_000 = 300_000
+    const escrow = await program.account.escrowAccountV2.fetch(escrowPda);
     expect(escrow.totalCallsSettled.toNumber()).to.equal(3);
-    expect(escrow.totalSettled.toNumber()).to.equal(300_000);
-    expect(escrow.balance.toNumber()).to.equal(15 * PRICE_PER_CALL - 300_000);
+    expect(escrow.totalSettled.toNumber()).to.equal(amount);
+    expect(escrow.balance.toNumber()).to.equal(
+      15 * PRICE_PER_CALL - amount - protocolFee(amount)
+    );
 
-    // Agent wallet received payment
     const balanceAfter = await connection.getBalance(agentOwner.publicKey);
     expect(balanceAfter).to.be.greaterThan(balanceBefore);
 
-    // Stats updated
     const stats = await program.account.agentStats.fetch(statsPda);
     expect(stats.totalCallsServed.toNumber()).to.equal(3);
   });
 
-  // ── 4. Batch Settle ──
-  it("Agent fa batch settle di 2 blocchi di chiamate", async () => {
-    const settlements = [
-      { callsToSettle: new BN(2), serviceHash: randomHash() },
-      { callsToSettle: new BN(1), serviceHash: randomHash() },
-    ];
-    const batchRoot = computeBatchRoot(
-      settlements.map((s) => Buffer.from(s.serviceHash))
-    );
-    const [receiptPda] = findSettlementReceiptPda(escrowPda, batchRoot);
+  it("Agent fa un secondo settle V2", async () => {
+    const amount = 3 * PRICE_PER_CALL;
 
     await program.methods
-      .settleBatch(settlements, Array.from(batchRoot))
+      .settleCallsV2(new BN(escrowNonce), new BN(3), randomHash())
       .accountsStrict({
         wallet: agentOwner.publicKey,
         agent: agentPda,
         agentStats: statsPda,
         escrow: escrowPda,
-        settlementReceipt: receiptPda,
         systemProgram: SystemProgram.programId,
       })
-      .signers([agentOwner])
+      .remainingAccounts(coSignedRemainingAccounts())
+      .signers([agentOwner, client])
       .rpc();
 
-    const escrow = await program.account.escrowAccount.fetch(escrowPda);
-    expect(escrow.totalCallsSettled.toNumber()).to.equal(6); // 3 + 2 + 1
+    const escrow = await program.account.escrowAccountV2.fetch(escrowPda);
+    expect(escrow.totalCallsSettled.toNumber()).to.equal(6);
+    expect(escrow.totalSettled.toNumber()).to.equal(6 * PRICE_PER_CALL);
+    expect(escrow.balance.toNumber()).to.equal(
+      15 * PRICE_PER_CALL - amount * 2 - protocolFee(amount) * 2
+    );
   });
 
-  // ── 5. Withdraw ──
   it("Client preleva parte del saldo dell'escrow", async () => {
     const balanceBefore = await connection.getBalance(client.publicKey);
 
     await program.methods
-      .withdrawEscrow(new BN(200_000))
+      .withdrawEscrowV2(new BN(200_000))
       .accountsStrict({
         depositor: client.publicKey,
         escrow: escrowPda,
@@ -210,14 +200,13 @@ describe("05 — Escrow & x402 Payments", () => {
     expect(balanceAfter).to.be.greaterThan(balanceBefore);
   });
 
-  // ── 6. Withdraw All Remaining ──
   it("Client preleva tutto il saldo rimanente", async () => {
-    const escrowBefore = await program.account.escrowAccount.fetch(escrowPda);
+    const escrowBefore = await program.account.escrowAccountV2.fetch(escrowPda);
     const remaining = escrowBefore.balance.toNumber();
 
     if (remaining > 0) {
       await program.methods
-        .withdrawEscrow(new BN(remaining))
+        .withdrawEscrowV2(new BN(remaining))
         .accountsStrict({
           depositor: client.publicKey,
           escrow: escrowPda,
@@ -226,17 +215,17 @@ describe("05 — Escrow & x402 Payments", () => {
         .rpc();
     }
 
-    const escrow = await program.account.escrowAccount.fetch(escrowPda);
+    const escrow = await program.account.escrowAccountV2.fetch(escrowPda);
     expect(escrow.balance.toNumber()).to.equal(0);
   });
 
-  // ── 7. Close Escrow (balance must be 0) ──
-  it("Client chiude l'escrow — rent rimborsato", async () => {
+  it("Client chiude l'escrow V2 - rent rimborsato", async () => {
     await program.methods
-      .closeEscrow()
+      .closeEscrowV2()
       .accountsStrict({
         depositor: client.publicKey,
         escrow: escrowPda,
+        agentStats: statsPda,
       })
       .signers([client])
       .rpc();
@@ -245,32 +234,37 @@ describe("05 — Escrow & x402 Payments", () => {
     expect(info).to.be.null;
   });
 
-  // ── 8. Test: Cannot settle on inactive agent ──
-  it("Errore: settle su agente inattivo", async () => {
-    // Re-create escrow first
-    [escrowPda] = findEscrowPda(agentPda, client.publicKey);
+  it("Errore: settle V2 su agente inattivo", async () => {
+    escrowNonce += 1;
+    [escrowPda] = findEscrowV2Pda(agentPda, client.publicKey, escrowNonce);
 
     await program.methods
-      .createEscrow(
+      .createEscrowV2(
+        new BN(escrowNonce),
         new BN(PRICE_PER_CALL),
-        new BN(0), // unlimited
+        new BN(0),
         new BN(PRICE_PER_CALL * 5),
         new BN(0),
         [],
         null,
-        9
+        9,
+        1,
+        new BN(0),
+        client.publicKey,
+        null
       )
       .accountsStrict({
         depositor: client.publicKey,
         agent: agentPda,
         agentStake: stakePda,
+        agentStats: statsPda,
+        pricingMenu: pricingPda,
         escrow: escrowPda,
         systemProgram: SystemProgram.programId,
       })
       .signers([client])
       .rpc();
 
-    // Deactivate
     await program.methods
       .deactivateAgent()
       .accountsStrict({
@@ -282,26 +276,22 @@ describe("05 — Escrow & x402 Payments", () => {
       .signers([agentOwner])
       .rpc();
 
-    // Try settle → should fail
-    const failHash = randomHash();
-    const [failReceipt] = findSettlementReceiptPda(escrowPda, failHash);
     await expectError(
       program.methods
-        .settleCalls(new BN(1), failHash)
+        .settleCallsV2(new BN(escrowNonce), new BN(1), randomHash())
         .accountsStrict({
           wallet: agentOwner.publicKey,
           agent: agentPda,
           agentStats: statsPda,
           escrow: escrowPda,
-          settlementReceipt: failReceipt,
           systemProgram: SystemProgram.programId,
         })
-        .signers([agentOwner])
+        .remainingAccounts(coSignedRemainingAccounts())
+        .signers([agentOwner, client])
         .rpc(),
       "AgentInactive"
     );
 
-    // Reactivate for cleanup
     await program.methods
       .reactivateAgent()
       .accountsStrict({
@@ -313,18 +303,21 @@ describe("05 — Escrow & x402 Payments", () => {
       .signers([agentOwner])
       .rpc();
 
-    // Withdraw and close for cleanup
-    const escrow = await program.account.escrowAccount.fetch(escrowPda);
+    const escrow = await program.account.escrowAccountV2.fetch(escrowPda);
     if (escrow.balance.toNumber() > 0) {
       await program.methods
-        .withdrawEscrow(escrow.balance)
+        .withdrawEscrowV2(escrow.balance)
         .accountsStrict({ depositor: client.publicKey, escrow: escrowPda })
         .signers([client])
         .rpc();
     }
     await program.methods
-      .closeEscrow()
-      .accountsStrict({ depositor: client.publicKey, escrow: escrowPda })
+      .closeEscrowV2()
+      .accountsStrict({
+        depositor: client.publicKey,
+        escrow: escrowPda,
+        agentStats: statsPda,
+      })
       .signers([client])
       .rpc();
   });

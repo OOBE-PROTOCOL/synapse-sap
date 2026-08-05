@@ -28,21 +28,20 @@ import {
   findGlobalPda,
   findAgentPda,
   findStatsPda,
+  findPricingPda,
   findFeedbackPda,
-  findEscrowPda,
+  findEscrowV2Pda,
   findVaultPda,
   findSessionPda,
   findAttestationPda,
   findToolPda,
   findLedgerPda,
   findStakePda,
-  findSettlementReceiptPda,
-  computeBatchRoot,
+  PROTOCOL_TREASURY,
   airdrop,
   ensureGlobalInitialized,
   registerAgent,
   initAgentStake,
-  defaultRegistrationArgs,
   defaultCapability,
   defaultPricing,
   sha256,
@@ -69,6 +68,8 @@ describe("09 — Security & Exploit Prevention", () => {
   let agentPda: PublicKey;
   let statsPda: PublicKey;
   let stakePda: PublicKey;
+  let pricingPda: PublicKey;
+  let escrowNonce = 1;
 
   before(async () => {
     await Promise.all([
@@ -85,20 +86,100 @@ describe("09 — Security & Exploit Prevention", () => {
     });
     agentPda = result.agentPda;
     statsPda = result.statsPda;
+    pricingPda = result.pricingPda;
     // v0.10 — stake-gate: bootstrap stake before any escrow.
     const stakeRes = await initAgentStake(program, agentOwner);
     stakePda = stakeRes.stakePda;
   });
 
+  async function createSolCoSignedEscrowV2(params: {
+    pricePerCall: number;
+    maxCalls: number;
+    initialDeposit: number;
+  }): Promise<{ escrowPda: PublicKey; nonce: number }> {
+    const nonce = escrowNonce++;
+    const [escrowPda] = findEscrowV2Pda(agentPda, client.publicKey, nonce);
+
+    await program.methods
+      .createEscrowV2(
+        new BN(nonce),
+        new BN(params.pricePerCall),
+        new BN(params.maxCalls),
+        new BN(params.initialDeposit),
+        new BN(0),
+        [],
+        null,
+        9,
+        1,
+        new BN(0),
+        client.publicKey,
+        null
+      )
+      .accountsStrict({
+        depositor: client.publicKey,
+        agent: agentPda,
+        agentStake: stakePda,
+        agentStats: statsPda,
+        pricingMenu: pricingPda,
+        escrow: escrowPda,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([client])
+      .rpc();
+
+    return { escrowPda, nonce };
+  }
+
+  function coSignedSettlementRemainingAccounts() {
+    return [
+      { pubkey: PROTOCOL_TREASURY, isWritable: true, isSigner: false },
+      { pubkey: client.publicKey, isWritable: false, isSigner: true },
+    ];
+  }
+
   // ═══════════════════════════════════════════════════════════════
   //  INPUT VALIDATION
   // ═══════════════════════════════════════════════════════════════
+
+  it("Errore: register valida senza treasury fee account", async () => {
+    const w = Keypair.generate();
+    await airdrop(connection, w.publicKey, 5);
+    const [ap] = findAgentPda(w.publicKey);
+    const [sp] = findStatsPda(ap);
+    const [pp] = findPricingPda(ap);
+
+    await expectError(
+      program.methods
+        .registerAgent(
+          "NoTreasuryAgent",
+          "valid registration without treasury account",
+          [defaultCapability()],
+          [defaultPricing()],
+          ["x402"],
+          null,
+          null,
+          null
+        )
+        .accountsStrict({
+          wallet: w.publicKey,
+          agent: ap,
+          agentStats: sp,
+          pricingMenu: pp,
+          globalRegistry: globalPda,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([w])
+        .rpc(),
+      "InvalidTreasury"
+    );
+  });
 
   it("Errore: nome vuoto", async () => {
     const w = Keypair.generate();
     await airdrop(connection, w.publicKey, 5);
     const [ap] = findAgentPda(w.publicKey);
     const [sp] = findStatsPda(ap);
+    const [pp] = findPricingPda(ap);
 
     await expectError(
       program.methods
@@ -116,9 +197,13 @@ describe("09 — Security & Exploit Prevention", () => {
           wallet: w.publicKey,
           agent: ap,
           agentStats: sp,
+          pricingMenu: pp,
           globalRegistry: globalPda,
           systemProgram: SystemProgram.programId,
         })
+        .remainingAccounts([
+          { pubkey: PROTOCOL_TREASURY, isSigner: false, isWritable: true },
+        ])
         .signers([w])
         .rpc(),
       "EmptyName"
@@ -130,6 +215,7 @@ describe("09 — Security & Exploit Prevention", () => {
     await airdrop(connection, w.publicKey, 5);
     const [ap] = findAgentPda(w.publicKey);
     const [sp] = findStatsPda(ap);
+    const [pp] = findPricingPda(ap);
 
     await expectError(
       program.methods
@@ -147,9 +233,13 @@ describe("09 — Security & Exploit Prevention", () => {
           wallet: w.publicKey,
           agent: ap,
           agentStats: sp,
+          pricingMenu: pp,
           globalRegistry: globalPda,
           systemProgram: SystemProgram.programId,
         })
+        .remainingAccounts([
+          { pubkey: PROTOCOL_TREASURY, isSigner: false, isWritable: true },
+        ])
         .signers([w])
         .rpc(),
       "NameTooLong"
@@ -161,6 +251,7 @@ describe("09 — Security & Exploit Prevention", () => {
     await airdrop(connection, w.publicKey, 5);
     const [ap] = findAgentPda(w.publicKey);
     const [sp] = findStatsPda(ap);
+    const [pp] = findPricingPda(ap);
 
     await expectError(
       program.methods
@@ -178,9 +269,13 @@ describe("09 — Security & Exploit Prevention", () => {
           wallet: w.publicKey,
           agent: ap,
           agentStats: sp,
+          pricingMenu: pp,
           globalRegistry: globalPda,
           systemProgram: SystemProgram.programId,
         })
+        .remainingAccounts([
+          { pubkey: PROTOCOL_TREASURY, isSigner: false, isWritable: true },
+        ])
         .signers([w])
         .rpc(),
       "EmptyDescription"
@@ -192,6 +287,7 @@ describe("09 — Security & Exploit Prevention", () => {
     await airdrop(connection, w.publicKey, 5);
     const [ap] = findAgentPda(w.publicKey);
     const [sp] = findStatsPda(ap);
+    const [pp] = findPricingPda(ap);
 
     await expectError(
       program.methods
@@ -209,9 +305,13 @@ describe("09 — Security & Exploit Prevention", () => {
           wallet: w.publicKey,
           agent: ap,
           agentStats: sp,
+          pricingMenu: pp,
           globalRegistry: globalPda,
           systemProgram: SystemProgram.programId,
         })
+        .remainingAccounts([
+          { pubkey: PROTOCOL_TREASURY, isSigner: false, isWritable: true },
+        ])
         .signers([w])
         .rpc(),
       "ControlCharInName"
@@ -223,6 +323,7 @@ describe("09 — Security & Exploit Prevention", () => {
     await airdrop(connection, w.publicKey, 5);
     const [ap] = findAgentPda(w.publicKey);
     const [sp] = findStatsPda(ap);
+    const [pp] = findPricingPda(ap);
 
     await expectError(
       program.methods
@@ -240,9 +341,13 @@ describe("09 — Security & Exploit Prevention", () => {
           wallet: w.publicKey,
           agent: ap,
           agentStats: sp,
+          pricingMenu: pp,
           globalRegistry: globalPda,
           systemProgram: SystemProgram.programId,
         })
+        .remainingAccounts([
+          { pubkey: PROTOCOL_TREASURY, isSigner: false, isWritable: true },
+        ])
         .signers([w])
         .rpc(),
       "InvalidCapabilityFormat"
@@ -254,6 +359,7 @@ describe("09 — Security & Exploit Prevention", () => {
     await airdrop(connection, w.publicKey, 5);
     const [ap] = findAgentPda(w.publicKey);
     const [sp] = findStatsPda(ap);
+    const [pp] = findPricingPda(ap);
 
     await expectError(
       program.methods
@@ -271,9 +377,13 @@ describe("09 — Security & Exploit Prevention", () => {
           wallet: w.publicKey,
           agent: ap,
           agentStats: sp,
+          pricingMenu: pp,
           globalRegistry: globalPda,
           systemProgram: SystemProgram.programId,
         })
+        .remainingAccounts([
+          { pubkey: PROTOCOL_TREASURY, isSigner: false, isWritable: true },
+        ])
         .signers([w])
         .rpc(),
       "InvalidX402Endpoint"
@@ -582,142 +692,104 @@ describe("09 — Security & Exploit Prevention", () => {
   // ═══════════════════════════════════════════════════════════════
 
   it("Errore: settle con balance insufficiente", async () => {
-    const [escrowPda] = findEscrowPda(agentPda, client.publicKey);
-    const smallDeposit = 1000; // Very small
-
-    await program.methods
-      .createEscrow(
-        new BN(1_000_000), // 1M per call
-        new BN(0),
-        new BN(smallDeposit),
-        new BN(0),
-        [],
-        null,
-        9
-      )
-      .accountsStrict({
-        depositor: client.publicKey,
-        agent: agentPda,
-        agentStake: stakePda,
-        escrow: escrowPda,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([client])
-      .rpc();
+    const smallDeposit = 1000;
+    const { escrowPda, nonce } = await createSolCoSignedEscrowV2({
+      pricePerCall: 1_000_000,
+      maxCalls: 0,
+      initialDeposit: smallDeposit,
+    });
 
     const h620 = randomHash();
-    const [r620] = findSettlementReceiptPda(escrowPda, h620);
     await expectError(
       program.methods
-        .settleCalls(new BN(1), h620)
+        .settleCallsV2(new BN(nonce), new BN(1), h620)
         .accountsStrict({
           wallet: agentOwner.publicKey,
           agent: agentPda,
           agentStats: statsPda,
           escrow: escrowPda,
-          settlementReceipt: r620,
           systemProgram: SystemProgram.programId,
         })
-        .signers([agentOwner])
+        .remainingAccounts(coSignedSettlementRemainingAccounts())
+        .signers([agentOwner, client])
         .rpc(),
       "InsufficientEscrowBalance"
     );
 
     // Cleanup
     await program.methods
-      .withdrawEscrow(new BN(smallDeposit))
+      .withdrawEscrowV2(new BN(smallDeposit))
       .accountsStrict({ depositor: client.publicKey, escrow: escrowPda })
       .signers([client])
       .rpc();
     await program.methods
-      .closeEscrow()
-      .accountsStrict({ depositor: client.publicKey, escrow: escrowPda })
+      .closeEscrowV2()
+      .accountsStrict({
+        depositor: client.publicKey,
+        escrow: escrowPda,
+        agentStats: statsPda,
+      })
       .signers([client])
       .rpc();
   });
 
   it("Errore: settle con calls_to_settle = 0", async () => {
-    const [escrowPda] = findEscrowPda(agentPda, client.publicKey);
-
-    await program.methods
-      .createEscrow(
-        new BN(100_000),
-        new BN(0),
-        new BN(1_000_000),
-        new BN(0),
-        [],
-        null,
-        9
-      )
-      .accountsStrict({
-        depositor: client.publicKey,
-        agent: agentPda,
-        agentStake: stakePda,
-        escrow: escrowPda,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([client])
-      .rpc();
+    const { escrowPda, nonce } = await createSolCoSignedEscrowV2({
+      pricePerCall: 1_000_000,
+      maxCalls: 0,
+      initialDeposit: 1_000_000,
+    });
 
     const h670 = randomHash();
-    const [r670] = findSettlementReceiptPda(escrowPda, h670);
     await expectError(
       program.methods
-        .settleCalls(new BN(0), h670)
+        .settleCallsV2(new BN(nonce), new BN(0), h670)
         .accountsStrict({
           wallet: agentOwner.publicKey,
           agent: agentPda,
           agentStats: statsPda,
           escrow: escrowPda,
-          settlementReceipt: r670,
           systemProgram: SystemProgram.programId,
         })
-        .signers([agentOwner])
+        .remainingAccounts(coSignedSettlementRemainingAccounts())
+        .signers([agentOwner, client])
         .rpc(),
       "InvalidSettlementCalls"
     );
 
     // Cleanup
-    const escrow = await program.account.escrowAccount.fetch(escrowPda);
+    const escrow = await program.account.escrowAccountV2.fetch(escrowPda);
     await program.methods
-      .withdrawEscrow(escrow.balance)
+      .withdrawEscrowV2(escrow.balance)
       .accountsStrict({ depositor: client.publicKey, escrow: escrowPda })
       .signers([client])
       .rpc();
     await program.methods
-      .closeEscrow()
-      .accountsStrict({ depositor: client.publicKey, escrow: escrowPda })
+      .closeEscrowV2()
+      .accountsStrict({
+        depositor: client.publicKey,
+        escrow: escrowPda,
+        agentStats: statsPda,
+      })
       .signers([client])
       .rpc();
   });
 
   it("Errore: close escrow con saldo > 0", async () => {
-    const [escrowPda] = findEscrowPda(agentPda, client.publicKey);
-
-    await program.methods
-      .createEscrow(
-        new BN(100_000),
-        new BN(0),
-        new BN(500_000),
-        new BN(0),
-        [],
-        null,
-        9
-      )
-      .accountsStrict({
-        depositor: client.publicKey,
-        agent: agentPda,
-        agentStake: stakePda,
-        escrow: escrowPda,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([client])
-      .rpc();
+    const { escrowPda } = await createSolCoSignedEscrowV2({
+      pricePerCall: 1_000_000,
+      maxCalls: 0,
+      initialDeposit: 500_000,
+    });
 
     await expectError(
       program.methods
-        .closeEscrow()
-        .accountsStrict({ depositor: client.publicKey, escrow: escrowPda })
+        .closeEscrowV2()
+        .accountsStrict({
+          depositor: client.publicKey,
+          escrow: escrowPda,
+          agentStats: statsPda,
+        })
         .signers([client])
         .rpc(),
       "EscrowNotEmpty"
@@ -725,146 +797,85 @@ describe("09 — Security & Exploit Prevention", () => {
 
     // Cleanup
     await program.methods
-      .withdrawEscrow(new BN(500_000))
+      .withdrawEscrowV2(new BN(500_000))
       .accountsStrict({ depositor: client.publicKey, escrow: escrowPda })
       .signers([client])
       .rpc();
     await program.methods
-      .closeEscrow()
-      .accountsStrict({ depositor: client.publicKey, escrow: escrowPda })
+      .closeEscrowV2()
+      .accountsStrict({
+        depositor: client.publicKey,
+        escrow: escrowPda,
+        agentStats: statsPda,
+      })
       .signers([client])
       .rpc();
   });
 
   it("Errore: escrow max_calls superato", async () => {
-    const [escrowPda] = findEscrowPda(agentPda, client.publicKey);
-
-    await program.methods
-      .createEscrow(
-        new BN(1000),
-        new BN(2), // max 2 calls
-        new BN(100_000),
-        new BN(0),
-        [],
-        null,
-        9
-      )
-      .accountsStrict({
-        depositor: client.publicKey,
-        agent: agentPda,
-        agentStake: stakePda,
-        escrow: escrowPda,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([client])
-      .rpc();
+    const { escrowPda, nonce } = await createSolCoSignedEscrowV2({
+      pricePerCall: 1_000_000,
+      maxCalls: 2,
+      initialDeposit: 3_000_000,
+    });
 
     // Settle 2 → OK
     const h766 = randomHash();
-    const [r766] = findSettlementReceiptPda(escrowPda, h766);
     await program.methods
-      .settleCalls(new BN(2), h766)
+      .settleCallsV2(new BN(nonce), new BN(2), h766)
       .accountsStrict({
         wallet: agentOwner.publicKey,
         agent: agentPda,
         agentStats: statsPda,
         escrow: escrowPda,
-        settlementReceipt: r766,
         systemProgram: SystemProgram.programId,
       })
-      .signers([agentOwner])
+      .remainingAccounts(coSignedSettlementRemainingAccounts())
+      .signers([agentOwner, client])
       .rpc();
 
     // Settle 1 more → FAIL (max exceeded)
     const h779 = randomHash();
-    const [r779] = findSettlementReceiptPda(escrowPda, h779);
     await expectError(
       program.methods
-        .settleCalls(new BN(1), h779)
+        .settleCallsV2(new BN(nonce), new BN(1), h779)
         .accountsStrict({
           wallet: agentOwner.publicKey,
           agent: agentPda,
           agentStats: statsPda,
           escrow: escrowPda,
-          settlementReceipt: r779,
           systemProgram: SystemProgram.programId,
         })
-        .signers([agentOwner])
+        .remainingAccounts(coSignedSettlementRemainingAccounts())
+        .signers([agentOwner, client])
         .rpc(),
       "EscrowMaxCallsExceeded"
     );
 
     // Cleanup
-    const escrow = await program.account.escrowAccount.fetch(escrowPda);
+    const escrow = await program.account.escrowAccountV2.fetch(escrowPda);
     if (escrow.balance.toNumber() > 0) {
       await program.methods
-        .withdrawEscrow(escrow.balance)
+        .withdrawEscrowV2(escrow.balance)
         .accountsStrict({ depositor: client.publicKey, escrow: escrowPda })
         .signers([client])
         .rpc();
     }
     await program.methods
-      .closeEscrow()
-      .accountsStrict({ depositor: client.publicKey, escrow: escrowPda })
+      .closeEscrowV2()
+      .accountsStrict({
+        depositor: client.publicKey,
+        escrow: escrowPda,
+        agentStats: statsPda,
+      })
       .signers([client])
       .rpc();
   });
 
-  it("Errore: batch settlement vuoto", async () => {
-    const [escrowPda] = findEscrowPda(agentPda, client.publicKey);
-
-    await program.methods
-      .createEscrow(
-        new BN(1000),
-        new BN(0),
-        new BN(100_000),
-        new BN(0),
-        [],
-        null,
-        9
-      )
-      .accountsStrict({
-        depositor: client.publicKey,
-        agent: agentPda,
-        agentStake: stakePda,
-        escrow: escrowPda,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([client])
-      .rpc();
-
-    const emptyRoot = Buffer.alloc(32, 0);
-    const [rEmpty] = findSettlementReceiptPda(escrowPda, emptyRoot);
-    await expectError(
-      program.methods
-        .settleBatch([], Array.from(emptyRoot))
-        .accountsStrict({
-          wallet: agentOwner.publicKey,
-          agent: agentPda,
-          agentStats: statsPda,
-          escrow: escrowPda,
-          settlementReceipt: rEmpty,
-          systemProgram: SystemProgram.programId,
-        })
-        .signers([agentOwner])
-        .rpc(),
-      "BatchEmpty"
-    );
-
-    // Cleanup
-    const escrow = await program.account.escrowAccount.fetch(escrowPda);
-    if (escrow.balance.toNumber() > 0) {
-      await program.methods
-        .withdrawEscrow(escrow.balance)
-        .accountsStrict({ depositor: client.publicKey, escrow: escrowPda })
-        .signers([client])
-        .rpc();
-    }
-    await program.methods
-      .closeEscrow()
-      .accountsStrict({ depositor: client.publicKey, escrow: escrowPda })
-      .signers([client])
-      .rpc();
+  it("V1 batch settlement non è più esposto dall'IDL", async () => {
+    const names = program.idl.instructions.map((ix) => ix.name);
+    expect(names).to.not.include("settle_batch");
+    expect(names).to.not.include("create_escrow");
   });
 
   // ═══════════════════════════════════════════════════════════════

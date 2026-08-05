@@ -24,12 +24,17 @@ import { BN } from "bn.js";
 export const PROGRAM_ID = new PublicKey(
   "SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ"
 );
+export const PROTOCOL_TREASURY = new PublicKey(
+  "J7PyZAGKvprCz4SQ5DKBLAHstJxgVqZcz6kguUoWpP7P"
+);
+export const REGISTRATION_FEE_LAMPORTS = 100_000_000; // 0.1 SOL
 
 /** Convenience: all seeds used by the program */
 export const SEEDS = {
   GLOBAL: Buffer.from("sap_global"),
   AGENT: Buffer.from("sap_agent"),
   STATS: Buffer.from("sap_stats"),
+  PRICING: Buffer.from("sap_pricing"),
   FEEDBACK: Buffer.from("sap_feedback"),
   CAP_IDX: Buffer.from("sap_cap_idx"),
   PROTO_IDX: Buffer.from("sap_proto_idx"),
@@ -53,6 +58,7 @@ export const SEEDS = {
   RECV: Buffer.from("sap_recv"),
   /** v0.5.0 — agent stake collateral PDA seed */
   STAKE: Buffer.from("sap_stake"),
+  ESCROW_V2: Buffer.from("sap_escrow_v2"),
 } as const;
 
 // USDC mints (v0.10.0 payment-token allowlist)
@@ -96,6 +102,13 @@ export function findAgentPda(wallet: PublicKey): [PublicKey, number] {
 export function findStatsPda(agentPda: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
     [SEEDS.STATS, agentPda.toBuffer()],
+    PROGRAM_ID
+  );
+}
+
+export function findPricingPda(agentPda: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [SEEDS.PRICING, agentPda.toBuffer()],
     PROGRAM_ID
   );
 }
@@ -204,6 +217,19 @@ export function findEscrowPda(
 ): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
     [SEEDS.ESCROW, agentPda.toBuffer(), depositor.toBuffer()],
+    PROGRAM_ID
+  );
+}
+
+export function findEscrowV2Pda(
+  agentPda: PublicKey,
+  depositor: PublicKey,
+  escrowNonce: number
+): [PublicKey, number] {
+  const nonce = Buffer.alloc(8);
+  nonce.writeBigUInt64LE(BigInt(escrowNonce));
+  return PublicKey.findProgramAddressSync(
+    [SEEDS.ESCROW_V2, agentPda.toBuffer(), depositor.toBuffer(), nonce],
     PROGRAM_ID
   );
 }
@@ -383,16 +409,21 @@ export async function ensureGlobalInitialized(
 
 /**
  * Registers an agent with default params.
- * Returns { agentPda, statsPda }.
+ * Returns { agentPda, statsPda, pricingPda }.
  */
 export async function registerAgent(
   program: Program<SynapseAgentSap>,
   wallet: Keypair,
   globalPda: PublicKey,
   overrides: Partial<ReturnType<typeof defaultRegistrationArgs>> = {}
-): Promise<{ agentPda: PublicKey; statsPda: PublicKey }> {
+): Promise<{
+  agentPda: PublicKey;
+  statsPda: PublicKey;
+  pricingPda: PublicKey;
+}> {
   const [agentPda] = findAgentPda(wallet.publicKey);
   const [statsPda] = findStatsPda(agentPda);
+  const [pricingPda] = findPricingPda(agentPda);
   const args = { ...defaultRegistrationArgs(), ...overrides };
 
   await program.methods
@@ -410,13 +441,17 @@ export async function registerAgent(
       wallet: wallet.publicKey,
       agent: agentPda,
       agentStats: statsPda,
+      pricingMenu: pricingPda,
       globalRegistry: globalPda,
       systemProgram: SystemProgram.programId,
     })
+    .remainingAccounts([
+      { pubkey: PROTOCOL_TREASURY, isSigner: false, isWritable: true },
+    ])
     .signers([wallet])
     .rpc();
 
-  return { agentPda, statsPda };
+  return { agentPda, statsPda, pricingPda };
 }
 
 /**

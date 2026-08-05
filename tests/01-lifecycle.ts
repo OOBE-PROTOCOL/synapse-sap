@@ -19,12 +19,15 @@ import {
   findAgentPda,
   findStatsPda,
   findVaultPda,
+  findStakePda,
   airdrop,
   ensureGlobalInitialized,
   registerAgent,
+  initAgentStake,
   defaultCapability,
   defaultPricing,
-  defaultRegistrationArgs,
+  PROTOCOL_TREASURY,
+  REGISTRATION_FEE_LAMPORTS,
 } from "./helpers";
 
 describe("01 — Agent Lifecycle", () => {
@@ -40,6 +43,8 @@ describe("01 — Agent Lifecycle", () => {
   let globalPda: PublicKey;
   let agentPda: PublicKey;
   let statsPda: PublicKey;
+  let pricingPda: PublicKey;
+  let stakePda: PublicKey;
 
   // ── Setup ──
   before(async () => {
@@ -60,6 +65,7 @@ describe("01 — Agent Lifecycle", () => {
 
   // ── 2. Register Agent ──
   it("Registra un agente con capabilities e pricing", async () => {
+    const treasuryBefore = await connection.getBalance(PROTOCOL_TREASURY);
     const result = await registerAgent(program, agentOwner, globalPda, {
       name: "Jupiter Agent",
       description: "DeFi swap aggregator powered by Jupiter",
@@ -75,6 +81,9 @@ describe("01 — Agent Lifecycle", () => {
     });
     agentPda = result.agentPda;
     statsPda = result.statsPda;
+    pricingPda = result.pricingPda;
+    const stakeRes = await initAgentStake(program, agentOwner);
+    stakePda = stakeRes.stakePda;
 
     // Verifica account
     const agent = await program.account.agentAccount.fetch(agentPda);
@@ -102,6 +111,27 @@ describe("01 — Agent Lifecycle", () => {
     const global = await program.account.globalRegistry.fetch(globalPda);
     expect(global.totalAgents.toNumber()).to.equal(1);
     expect(global.activeAgents.toNumber()).to.equal(1);
+
+    const treasuryAfter = await connection.getBalance(PROTOCOL_TREASURY);
+    expect(treasuryAfter - treasuryBefore).to.equal(REGISTRATION_FEE_LAMPORTS);
+  });
+
+  it("Migra/sincronizza AgentPricingMenu in modo idempotente", async () => {
+    await program.methods
+      .migratePricingMenu()
+      .accountsStrict({
+        wallet: agentOwner.publicKey,
+        agent: agentPda,
+        pricingMenu: pricingPda,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([agentOwner])
+      .rpc();
+
+    const menu = await program.account.agentPricingMenu.fetch(pricingPda);
+    expect(menu.agent.toBase58()).to.equal(agentPda.toBase58());
+    expect(menu.tiers).to.have.length(1);
+    expect(menu.tiers[0].tierId).to.equal("standard");
   });
 
   // ── 3. Update Agent ──
@@ -128,6 +158,7 @@ describe("01 — Agent Lifecycle", () => {
       .accountsStrict({
         wallet: agentOwner.publicKey,
         agent: agentPda,
+        pricingMenu: pricingPda,
         systemProgram: SystemProgram.programId,
       })
       .signers([agentOwner])
@@ -208,6 +239,8 @@ describe("01 — Agent Lifecycle", () => {
         agent: agentPda,
         agentStats: statsPda,
         vaultCheck: vaultCheck,
+        pricingMenu: pricingPda,
+        stake: stakePda,
         globalRegistry: globalPda,
       })
       .signers([agentOwner])
@@ -232,6 +265,8 @@ describe("01 — Agent Lifecycle", () => {
     });
     agentPda = result.agentPda;
     statsPda = result.statsPda;
+    pricingPda = result.pricingPda;
+    stakePda = findStakePda(agentPda)[0];
 
     const agent = await program.account.agentAccount.fetch(agentPda);
     expect(agent.name).to.equal("Jupiter Agent v2");

@@ -1,45 +1,31 @@
 /**
- * SAP v0.10 — Test 11: Hardening (audit fixes + new requirements)
+ * SAP v2 - Test 11: Hardening
  *
- * Covers:
- *   • C1  — anti-replay receipt PDA on settle_calls / settle_batch / settle_calls_v2
- *   • H2  — vault delegate expires_at must be > now and ≤ 1 year
- *   • M1  — volume curve must be monotonically non-increasing
- *   • New — `createEscrow` requires `AgentStake.staked_amount ≥ MIN_STAKE`
- *   • New — `tokenMint` allowlist (SOL, USDC mainnet, USDC devnet)
- *
- * These tests assume the program was built against the v0.10 hardening
- * branch (audit fixes applied) and `anchor test` is the runner.
+ * Covers current production escrow surfaces:
+ * - Escrow V2 stake gate
+ * - SOL/USDC payment-token allowlist
+ * - Volume curve monotonicity
+ * - Removal of deprecated V1 receipt/batch paths from the IDL
  */
 
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { SynapseAgentSap } from "../target/types/synapse_agent_sap";
-import {
-  Keypair,
-  SystemProgram,
-  PublicKey,
-  LAMPORTS_PER_SOL,
-} from "@solana/web3.js";
+import { Keypair, SystemProgram, PublicKey } from "@solana/web3.js";
 import { expect } from "chai";
 import { BN } from "bn.js";
 import {
-  findAgentPda,
-  findEscrowPda,
-  findStatsPda,
+  findEscrowV2Pda,
   findStakePda,
-  findSettlementReceiptPda,
-  computeBatchRoot,
   airdrop,
   ensureGlobalInitialized,
   registerAgent,
   initAgentStake,
-  randomHash,
   expectError,
   MIN_AGENT_STAKE_LAMPORTS,
 } from "./helpers";
 
-describe("11 — v0.10 Hardening (audit fixes + stake-gate + token allowlist)", () => {
+describe("11 - SAP v2 hardening", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
   const program = anchor.workspace.synapseAgentSap as Program<SynapseAgentSap>;
@@ -47,24 +33,25 @@ describe("11 — v0.10 Hardening (audit fixes + stake-gate + token allowlist)", 
 
   const authority = Keypair.generate();
   const agentOwner = Keypair.generate();
-  const agentNoStake = Keypair.generate(); // for stake-gate negative test
+  const agentNoStake = Keypair.generate();
   const client = Keypair.generate();
 
   let globalPda: PublicKey;
   let agentPda: PublicKey;
   let statsPda: PublicKey;
+  let pricingPda: PublicKey;
   let stakePda: PublicKey;
-  let escrowPda: PublicKey;
+  let escrowNonce = 1;
 
-  const PRICE = 100_000;
+  const PRICE = 1_000_000;
   const DEPOSIT = 50 * PRICE;
 
   before(async () => {
     await Promise.all([
-      airdrop(connection, authority.publicKey, 5),
-      airdrop(connection, agentOwner.publicKey, 5),
-      airdrop(connection, agentNoStake.publicKey, 5),
-      airdrop(connection, client.publicKey, 5),
+      airdrop(connection, authority.publicKey, 10),
+      airdrop(connection, agentOwner.publicKey, 10),
+      airdrop(connection, agentNoStake.publicKey, 10),
+      airdrop(connection, client.publicKey, 10),
     ]);
     globalPda = await ensureGlobalInitialized(program, authority);
     const reg = await registerAgent(program, agentOwner, globalPda, {
@@ -72,267 +59,169 @@ describe("11 — v0.10 Hardening (audit fixes + stake-gate + token allowlist)", 
     });
     agentPda = reg.agentPda;
     statsPda = reg.statsPda;
-    // Bootstrap stake so the agent can accept escrows.
+    pricingPda = reg.pricingPda;
+
     const stakeRes = await initAgentStake(program, agentOwner);
     stakePda = stakeRes.stakePda;
-    [escrowPda] = findEscrowPda(agentPda, client.publicKey);
+    const stake = await program.account.agentStake.fetch(stakePda);
+    expect(stake.stakedAmount.toNumber()).to.be.gte(MIN_AGENT_STAKE_LAMPORTS);
   });
 
-  // ── New requirement #1: agent stake gate ──────────────────
-  describe("Stake-gate on createEscrow", () => {
-    it("✗ rejects createEscrow when agent has no stake PDA", async () => {
-      // Agent without init_stake → stake account does not exist on-chain.
+  function nextEscrow(agent: PublicKey, depositor: PublicKey) {
+    const nonce = escrowNonce++;
+    const [escrowPda] = findEscrowV2Pda(agent, depositor, nonce);
+    return { nonce, escrowPda };
+  }
+
+  function createEscrowV2Ix(params: {
+    nonce: number;
+    escrowPda: PublicKey;
+    depositor: PublicKey;
+    signer: Keypair;
+    agent: PublicKey;
+    agentStake: PublicKey;
+    agentStats: PublicKey;
+    pricingMenu: PublicKey;
+    tokenMint: PublicKey | null;
+    tokenDecimals: number;
+    volumeCurve?: Array<{
+      afterCalls: number;
+      pricePerCall: InstanceType<typeof BN>;
+    }>;
+  }) {
+    return program.methods
+      .createEscrowV2(
+        new BN(params.nonce),
+        new BN(PRICE),
+        new BN(10),
+        new BN(DEPOSIT),
+        new BN(0),
+        params.volumeCurve ?? [],
+        params.tokenMint,
+        params.tokenDecimals,
+        1,
+        new BN(0),
+        params.depositor,
+        null
+      )
+      .accountsStrict({
+        depositor: params.depositor,
+        agent: params.agent,
+        agentStake: params.agentStake,
+        agentStats: params.agentStats,
+        pricingMenu: params.pricingMenu,
+        escrow: params.escrowPda,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([params.signer]);
+  }
+
+  describe("Stake-gate on createEscrowV2", () => {
+    it("rejects createEscrowV2 when agent has no stake PDA", async () => {
       const reg = await registerAgent(program, agentNoStake, globalPda, {
         name: "NoStakeAgent",
       });
-      const [escrowMissingStake] = findEscrowPda(
-        reg.agentPda,
-        client.publicKey
-      );
+      const { nonce, escrowPda } = nextEscrow(reg.agentPda, client.publicKey);
       const [stakeMissing] = findStakePda(reg.agentPda);
 
       await expectError(
-        program.methods
-          .createEscrow(
-            new BN(PRICE),
-            new BN(10),
-            new BN(DEPOSIT),
-            new BN(0),
-            [],
-            null,
-            9
-          )
-          .accountsStrict({
-            depositor: client.publicKey,
-            agent: reg.agentPda,
-            agentStake: stakeMissing,
-            escrow: escrowMissingStake,
-            systemProgram: SystemProgram.programId,
-          })
-          .signers([client])
-          .rpc(),
-        "AccountNotInitialized" // anchor's error when init account missing
+        createEscrowV2Ix({
+          nonce,
+          escrowPda,
+          depositor: client.publicKey,
+          signer: client,
+          agent: reg.agentPda,
+          agentStake: stakeMissing,
+          agentStats: reg.statsPda,
+          pricingMenu: reg.pricingPda,
+          tokenMint: null,
+          tokenDecimals: 9,
+        }).rpc(),
+        "AccountNotInitialized"
       );
     });
 
-    it("✓ accepts createEscrow when agent has stake ≥ MIN_STAKE", async () => {
-      await program.methods
-        .createEscrow(
-          new BN(PRICE),
-          new BN(100),
-          new BN(DEPOSIT),
-          new BN(0),
-          [],
-          null,
-          9
-        )
-        .accountsStrict({
-          depositor: client.publicKey,
-          agent: agentPda,
-          agentStake: stakePda,
-          escrow: escrowPda,
-          systemProgram: SystemProgram.programId,
-        })
-        .signers([client])
-        .rpc();
+    it("accepts createEscrowV2 when agent has stake >= MIN_STAKE", async () => {
+      const { nonce, escrowPda } = nextEscrow(agentPda, client.publicKey);
 
-      const escrow = await program.account.escrowAccount.fetch(escrowPda);
+      await createEscrowV2Ix({
+        nonce,
+        escrowPda,
+        depositor: client.publicKey,
+        signer: client,
+        agent: agentPda,
+        agentStake: stakePda,
+        agentStats: statsPda,
+        pricingMenu: pricingPda,
+        tokenMint: null,
+        tokenDecimals: 9,
+      }).rpc();
+
+      const escrow = await program.account.escrowAccountV2.fetch(escrowPda);
       expect(escrow.balance.toNumber()).to.equal(DEPOSIT);
     });
   });
 
-  // ── New requirement #2: payment-token allowlist ───────────
   describe("Payment-token allowlist", () => {
-    it("✗ rejects createEscrow with arbitrary SPL mint", async () => {
+    it("rejects createEscrowV2 with arbitrary SPL mint", async () => {
       const fakeMint = Keypair.generate().publicKey;
       const otherClient = Keypair.generate();
       await airdrop(connection, otherClient.publicKey, 2);
-      const [escrowBad] = findEscrowPda(agentPda, otherClient.publicKey);
+      const { nonce, escrowPda } = nextEscrow(agentPda, otherClient.publicKey);
 
       await expectError(
-        program.methods
-          .createEscrow(
-            new BN(PRICE),
-            new BN(10),
-            new BN(DEPOSIT),
-            new BN(0),
-            [],
-            fakeMint,
-            6
-          )
-          .accountsStrict({
-            depositor: otherClient.publicKey,
-            agent: agentPda,
-            agentStake: stakePda,
-            escrow: escrowBad,
-            systemProgram: SystemProgram.programId,
-          })
-          .signers([otherClient])
-          .rpc(),
-        "PaymentTokenNotAllowed"
+        createEscrowV2Ix({
+          nonce,
+          escrowPda,
+          depositor: otherClient.publicKey,
+          signer: otherClient,
+          agent: agentPda,
+          agentStake: stakePda,
+          agentStats: statsPda,
+          pricingMenu: pricingPda,
+          tokenMint: fakeMint,
+          tokenDecimals: 6,
+        }).rpc(),
+        "InvalidPaymentToken"
       );
     });
   });
 
-  // ── M1: volume curve must be non-increasing ──────────────
   describe("Volume curve monotonicity", () => {
-    it("✗ rejects ascending price curve (anti-discount)", async () => {
+    it("rejects ascending price curve", async () => {
       const otherClient = Keypair.generate();
       await airdrop(connection, otherClient.publicKey, 2);
-      const [escrowBad] = findEscrowPda(agentPda, otherClient.publicKey);
+      const { nonce, escrowPda } = nextEscrow(agentPda, otherClient.publicKey);
 
       await expectError(
-        program.methods
-          .createEscrow(
-            new BN(PRICE),
-            new BN(100),
-            new BN(DEPOSIT),
-            new BN(0),
-            // PRICE → 2× PRICE — invalid (price must be non-increasing).
-            [{ afterCalls: 50, pricePerCall: new BN(PRICE * 2) }],
-            null,
-            9
-          )
-          .accountsStrict({
-            depositor: otherClient.publicKey,
-            agent: agentPda,
-            agentStake: stakePda,
-            escrow: escrowBad,
-            systemProgram: SystemProgram.programId,
-          })
-          .signers([otherClient])
-          .rpc(),
+        createEscrowV2Ix({
+          nonce,
+          escrowPda,
+          depositor: otherClient.publicKey,
+          signer: otherClient,
+          agent: agentPda,
+          agentStake: stakePda,
+          agentStats: statsPda,
+          pricingMenu: pricingPda,
+          tokenMint: null,
+          tokenDecimals: 9,
+          volumeCurve: [{ afterCalls: 50, pricePerCall: new BN(PRICE * 2) }],
+        }).rpc(),
         "VolumeCurveNotDescending"
       );
     });
   });
 
-  // ── C1: anti-replay receipt PDA ───────────────────────────
-  describe("Anti-replay receipt PDA on settle_calls", () => {
-    const serviceHash = randomHash();
+  describe("Deprecated V1 settlement surfaces", () => {
+    it("does not expose V1 receipt or batch settlement accounts/instructions", async () => {
+      const instructionNames = program.idl.instructions.map((ix) => ix.name);
+      const accountNames =
+        program.idl.accounts?.map((account) => account.name) ?? [];
 
-    it("✓ first settle creates the SettlementReceipt PDA", async () => {
-      const [receiptPda] = findSettlementReceiptPda(escrowPda, serviceHash);
-
-      await program.methods
-        .settleCalls(new BN(1), serviceHash)
-        .accountsStrict({
-          wallet: agentOwner.publicKey,
-          agent: agentPda,
-          agentStats: statsPda,
-          escrow: escrowPda,
-          settlementReceipt: receiptPda,
-          systemProgram: SystemProgram.programId,
-        })
-        .signers([agentOwner])
-        .rpc();
-
-      const receipt = await program.account.settlementReceipt.fetch(receiptPda);
-      expect(receipt.escrow.toBase58()).to.equal(escrowPda.toBase58());
-      expect(receipt.callsSettled.toNumber()).to.equal(1);
-      expect(receipt.amount.toNumber()).to.equal(PRICE);
-    });
-
-    it("✗ second settle with same service_hash fails (replay blocked)", async () => {
-      const [receiptPda] = findSettlementReceiptPda(escrowPda, serviceHash);
-
-      await expectError(
-        program.methods
-          .settleCalls(new BN(1), serviceHash)
-          .accountsStrict({
-            wallet: agentOwner.publicKey,
-            agent: agentPda,
-            agentStats: statsPda,
-            escrow: escrowPda,
-            settlementReceipt: receiptPda,
-            systemProgram: SystemProgram.programId,
-          })
-          .signers([agentOwner])
-          .rpc(),
-        "already in use" // System program init twice → "account already in use"
-      );
-    });
-  });
-
-  describe("Anti-replay receipt PDA on settle_batch", () => {
-    it("✓ batch settle creates receipt PDA seeded by batch_root", async () => {
-      const settlements = [
-        { callsToSettle: new BN(1), serviceHash: randomHash() },
-        { callsToSettle: new BN(2), serviceHash: randomHash() },
-      ];
-      const batchRoot = computeBatchRoot(
-        settlements.map((s) => Buffer.from(s.serviceHash))
-      );
-      const [receiptPda] = findSettlementReceiptPda(escrowPda, batchRoot);
-
-      await program.methods
-        .settleBatch(settlements, Array.from(batchRoot))
-        .accountsStrict({
-          wallet: agentOwner.publicKey,
-          agent: agentPda,
-          agentStats: statsPda,
-          escrow: escrowPda,
-          settlementReceipt: receiptPda,
-          systemProgram: SystemProgram.programId,
-        })
-        .signers([agentOwner])
-        .rpc();
-
-      const receipt = await program.account.settlementReceipt.fetch(receiptPda);
-      expect(receipt.callsSettled.toNumber()).to.equal(3);
-      expect(Buffer.from(receipt.serviceHash)).to.deep.equal(batchRoot);
-    });
-
-    it("✗ rejects mismatched batch_root (computed root ≠ supplied root)", async () => {
-      const settlements = [
-        { callsToSettle: new BN(1), serviceHash: randomHash() },
-      ];
-      const wrongRoot = Buffer.alloc(32, 0xab);
-      const [receiptPda] = findSettlementReceiptPda(escrowPda, wrongRoot);
-
-      await expectError(
-        program.methods
-          .settleBatch(settlements, Array.from(wrongRoot))
-          .accountsStrict({
-            wallet: agentOwner.publicKey,
-            agent: agentPda,
-            agentStats: statsPda,
-            escrow: escrowPda,
-            settlementReceipt: receiptPda,
-            systemProgram: SystemProgram.programId,
-          })
-          .signers([agentOwner])
-          .rpc(),
-        "InvalidReceiptProof"
-      );
-    });
-
-    it("✗ rejects duplicated service_hash inside the same batch", async () => {
-      const dup = randomHash();
-      const settlements = [
-        { callsToSettle: new BN(1), serviceHash: dup },
-        { callsToSettle: new BN(1), serviceHash: dup },
-      ];
-      const batchRoot = computeBatchRoot(
-        settlements.map((s) => Buffer.from(s.serviceHash))
-      );
-      const [receiptPda] = findSettlementReceiptPda(escrowPda, batchRoot);
-
-      await expectError(
-        program.methods
-          .settleBatch(settlements, Array.from(batchRoot))
-          .accountsStrict({
-            wallet: agentOwner.publicKey,
-            agent: agentPda,
-            agentStats: statsPda,
-            escrow: escrowPda,
-            settlementReceipt: receiptPda,
-            systemProgram: SystemProgram.programId,
-          })
-          .signers([agentOwner])
-          .rpc(),
-        "DuplicateServiceHash"
-      );
+      expect(instructionNames).to.not.include("settle_calls");
+      expect(instructionNames).to.not.include("settle_batch");
+      expect(accountNames).to.not.include("settlement_receipt");
+      expect(accountNames).to.not.include("escrow_account");
     });
   });
 });

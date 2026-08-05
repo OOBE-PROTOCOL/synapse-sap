@@ -1,8 +1,10 @@
+use crate::constants::{PROTOCOL_TREASURY, REGISTRATION_FEE_LAMPORTS};
 use crate::errors::SapError;
 use crate::events::*;
 use crate::state::*;
 use crate::validator;
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::{program::invoke, system_instruction};
 
 // ═══════════════════════════════════════════════════════════════════
 //  register_agent — Create a new agent identity PDA
@@ -50,8 +52,8 @@ pub struct RegisterAgentAccountConstraints<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn register_handler(
-    ctx: Context<RegisterAgentAccountConstraints>,
+pub fn register_handler<'info>(
+    ctx: Context<'info, RegisterAgentAccountConstraints<'info>>,
     name: String,
     description: String,
     capabilities: Vec<Capability>,
@@ -71,6 +73,26 @@ pub fn register_handler(
         &protocols,
         &agent_uri,
         &x402_endpoint,
+    )?;
+
+    let treasury_info = ctx
+        .remaining_accounts
+        .first()
+        .ok_or(error!(SapError::InvalidTreasury))?;
+    require_keys_eq!(
+        treasury_info.key(),
+        PROTOCOL_TREASURY,
+        SapError::InvalidTreasury
+    );
+    require!(treasury_info.is_writable, SapError::InvalidTreasury);
+
+    invoke(
+        &system_instruction::transfer(
+            &ctx.accounts.wallet.key(),
+            &PROTOCOL_TREASURY,
+            REGISTRATION_FEE_LAMPORTS,
+        ),
+        &[ctx.accounts.wallet.to_account_info(), treasury_info.clone()],
     )?;
 
     let clock = Clock::get()?;
@@ -242,6 +264,57 @@ pub fn update_handler(
         wallet: wallet_key,
         updated_fields,
         timestamp: agent.updated_at,
+    });
+
+    Ok(())
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  migrate_pricing_menu — Backfill AgentPricingMenu for legacy agents
+// ═══════════════════════════════════════════════════════════════════
+
+#[derive(Accounts)]
+pub struct MigratePricingMenuAccountConstraints<'info> {
+    #[account(mut)]
+    pub wallet: Signer<'info>,
+
+    #[account(
+        seeds = [b"sap_agent", wallet.key().as_ref()],
+        bump = agent.bump,
+        has_one = wallet,
+    )]
+    pub agent: Account<'info, AgentAccount>,
+
+    #[account(
+        init_if_needed,
+        payer = wallet,
+        space = AgentPricingMenu::DISCRIMINATOR.len() + AgentPricingMenu::INIT_SPACE,
+        seeds = [b"sap_pricing", agent.key().as_ref()],
+        bump,
+    )]
+    pub pricing_menu: Account<'info, AgentPricingMenu>,
+
+    pub system_program: Program<'info, System>,
+}
+
+pub fn migrate_pricing_menu_handler(
+    ctx: Context<MigratePricingMenuAccountConstraints>,
+) -> Result<()> {
+    let ts = Clock::get()?.unix_timestamp;
+    let agent_key = ctx.accounts.agent.key();
+
+    let menu = &mut ctx.accounts.pricing_menu;
+    menu.bump = ctx.bumps.pricing_menu;
+    menu.agent = agent_key;
+    menu.tiers = ctx.accounts.agent.pricing.clone();
+    menu.updated_at = ts;
+
+    emit!(PricingMenuMigratedEvent {
+        agent: agent_key,
+        wallet: ctx.accounts.wallet.key(),
+        pricing_menu: menu.key(),
+        tier_count: menu.tiers.len() as u8,
+        timestamp: ts,
     });
 
     Ok(())

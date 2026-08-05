@@ -7,3 +7,4 @@ pub const PROTOCOL_TREASURY: Pubkey = Pubkey::new_from_array([
 
 pub const PROTOCOL_FEE_BPS: u64 = 50;
 pub const BPS_DENOMINATOR: u64 = 10_000;
+pub const REGISTRATION_FEE_LAMPORTS: u64 = 100_000_000; // 0.1 SOL

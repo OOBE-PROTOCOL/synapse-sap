@@ -22,6 +22,15 @@ pub struct UpdatedEvent {
 }
 
 #[event]
+pub struct PricingMenuMigratedEvent {
+    pub agent: Pubkey,
+    pub wallet: Pubkey,
+    pub pricing_menu: Pubkey,
+    pub tier_count: u8,
+    pub timestamp: i64,
+}
+
+#[event]
 pub struct DeactivatedEvent {
     pub agent: Pubkey,
     pub wallet: Pubkey,
