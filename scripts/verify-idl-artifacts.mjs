@@ -186,9 +186,9 @@ if (canonical.address !== PROGRAM_ID) {
   fail(`Canonical IDL address mismatch: ${canonical.address}`);
 }
 
-if (canonical.metadata?.version !== "1.0.0") {
+if (canonical.metadata?.version !== "1.0.3") {
   fail(
-    `Canonical IDL metadata.version must be 1.0.0, got ${canonical.metadata?.version}`
+    `Canonical IDL metadata.version must be 1.0.3, got ${canonical.metadata?.version}`
   );
 }
 

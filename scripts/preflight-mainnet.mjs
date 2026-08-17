@@ -17,7 +17,7 @@ const MAINNET_RPC = "https://api.mainnet-beta.solana.com";
 const DEVNET_RPC = "https://api.devnet.solana.com";
 
 const EXPECTED_IDL = {
-  version: "1.0.0",
+  version: "1.0.3",
   instructionCount: 79,
   hasMigratePricingMenu: true,
   createEscrowV2Accounts: [

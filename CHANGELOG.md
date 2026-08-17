@@ -5,7 +5,7 @@ All notable changes to the Synapse Agent Protocol program will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.3] - 2026-08-05
 
 ### Added
 
@@ -14,12 +14,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `register_agent` time.
 - GitHub Actions release gates for program CI, local validator tests, devnet
   smoke tests, mainnet read-only preflight, and release artifact checksums.
+- Production testing pipeline document with mainnet upgrade sequence and
+  rollback plan.
+- IDL artifact verification scripts: `verify-idl-artifacts.mjs`,
+  `audit-onchain-idl.mjs`, `sync-idl-artifacts.mjs`, `preflight-mainnet.mjs`.
+- Separate `verify:idl:checked-in` (pre-build) and `verify:idl` (post-build)
+  gates to fix CI on clean checkouts.
+
+### Changed
+
+- Program, root package, SDK package, CLI package, and all embedded IDL
+  artifacts aligned to `1.0.3`.
+- SNS module and adapter updated for Anchor 1.0 compatibility.
 
 ### Fixed
 
 - Legacy agents with inline `AgentAccount.pricing` but no pricing-menu PDA can
   be migrated instead of being forced to re-register, restoring `update_agent`,
   `close_agent`, and `create_escrow_v2` compatibility.
+- CI workflow now verifies checked-in IDL before `anchor build` and generated
+  IDL after build, preventing false failures on clean runners.
 
 ## [1.0.0] - 2026-07-06
 

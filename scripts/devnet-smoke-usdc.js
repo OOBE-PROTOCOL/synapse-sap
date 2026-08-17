@@ -194,7 +194,7 @@ async function main() {
           id: "smoke:usdc",
           description: "Devnet USDC smoke test capability",
           protocolId: "sap",
-          version: "1.0.0",
+          version: "1.0.3",
         },
       ],
       [usdcPricing(100_000)],

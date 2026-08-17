@@ -19,7 +19,7 @@ const NETWORKS = {
 };
 
 const EXPECTED = {
-  version: "1.0.0",
+  version: "1.0.3",
   instructionCount: 79,
   hasMigratePricingMenu: true,
   createEscrowV2Accounts: [

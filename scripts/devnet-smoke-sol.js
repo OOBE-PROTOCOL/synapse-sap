@@ -75,7 +75,7 @@ function capability(id) {
     id,
     description: "Devnet smoke test capability",
     protocolId: "sap",
-    version: "1.0.0",
+    version: "1.0.3",
   };
 }
 
