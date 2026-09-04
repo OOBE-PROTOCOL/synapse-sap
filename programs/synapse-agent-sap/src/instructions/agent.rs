@@ -1,6 +1,7 @@
 use crate::constants::{PROTOCOL_TREASURY, REGISTRATION_FEE_LAMPORTS};
 use crate::errors::SapError;
 use crate::events::*;
+use crate::seeds;
 use crate::state::*;
 use crate::validator;
 use anchor_lang::prelude::*;
@@ -19,7 +20,7 @@ pub struct RegisterAgentAccountConstraints<'info> {
         init,
         payer = wallet,
         space = AgentAccount::DISCRIMINATOR.len() + AgentAccount::INIT_SPACE,
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump,
     )]
     pub agent: Account<'info, AgentAccount>,
@@ -28,7 +29,7 @@ pub struct RegisterAgentAccountConstraints<'info> {
         init,
         payer = wallet,
         space = AgentStats::DISCRIMINATOR.len() + AgentStats::INIT_SPACE,
-        seeds = [b"sap_stats", agent.key().as_ref()],
+        seeds = [seeds::STATS, agent.key().as_ref()],
         bump,
     )]
     pub agent_stats: Account<'info, AgentStats>,
@@ -37,14 +38,14 @@ pub struct RegisterAgentAccountConstraints<'info> {
         init,
         payer = wallet,
         space = AgentPricingMenu::DISCRIMINATOR.len() + AgentPricingMenu::INIT_SPACE,
-        seeds = [b"sap_pricing", agent.key().as_ref()],
+        seeds = [seeds::PRICING, agent.key().as_ref()],
         bump,
     )]
     pub pricing_menu: Account<'info, AgentPricingMenu>,
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,
@@ -174,7 +175,7 @@ pub struct UpdateAgentAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -182,7 +183,7 @@ pub struct UpdateAgentAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_pricing", agent.key().as_ref()],
+        seeds = [seeds::PRICING, agent.key().as_ref()],
         bump = pricing_menu.bump,
     )]
     pub pricing_menu: Account<'info, AgentPricingMenu>,
@@ -279,7 +280,7 @@ pub struct MigratePricingMenuAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -289,7 +290,7 @@ pub struct MigratePricingMenuAccountConstraints<'info> {
         init_if_needed,
         payer = wallet,
         space = AgentPricingMenu::DISCRIMINATOR.len() + AgentPricingMenu::INIT_SPACE,
-        seeds = [b"sap_pricing", agent.key().as_ref()],
+        seeds = [seeds::PRICING, agent.key().as_ref()],
         bump,
     )]
     pub pricing_menu: Account<'info, AgentPricingMenu>,
@@ -330,7 +331,7 @@ pub struct DeactivateAgentAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -338,14 +339,14 @@ pub struct DeactivateAgentAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_stats", agent.key().as_ref()],
+        seeds = [seeds::STATS, agent.key().as_ref()],
         bump = agent_stats.bump,
     )]
     pub agent_stats: Account<'info, AgentStats>,
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,
@@ -381,7 +382,7 @@ pub struct ReactivateAgentAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -389,14 +390,14 @@ pub struct ReactivateAgentAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_stats", agent.key().as_ref()],
+        seeds = [seeds::STATS, agent.key().as_ref()],
         bump = agent_stats.bump,
     )]
     pub agent_stats: Account<'info, AgentStats>,
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,
@@ -440,7 +441,7 @@ pub struct CloseAgentAccountConstraints<'info> {
     #[account(
         mut,
         close = wallet,
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -449,14 +450,14 @@ pub struct CloseAgentAccountConstraints<'info> {
     #[account(
         mut,
         close = wallet,
-        seeds = [b"sap_stats", agent.key().as_ref()],
+        seeds = [seeds::STATS, agent.key().as_ref()],
         bump = agent_stats.bump,
     )]
     pub agent_stats: Account<'info, AgentStats>,
 
     /// CHECK: Vault PDA — must not exist. Prevents close with active vault.
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump,
     )]
     pub vault_check: UncheckedAccount<'info>,
@@ -464,7 +465,7 @@ pub struct CloseAgentAccountConstraints<'info> {
     #[account(
         mut,
         close = wallet,
-        seeds = [b"sap_pricing", agent.key().as_ref()],
+        seeds = [seeds::PRICING, agent.key().as_ref()],
         bump,
     )]
     pub pricing_menu: Account<'info, AgentPricingMenu>,
@@ -472,7 +473,7 @@ pub struct CloseAgentAccountConstraints<'info> {
     #[account(
         mut,
         close = wallet,
-        seeds = [b"sap_stake", agent.key().as_ref()],
+        seeds = [seeds::STAKE, agent.key().as_ref()],
         bump = stake.bump,
         has_one = wallet,
         constraint = stake.agent == agent.key() @ SapError::StakeAgentMismatch,
@@ -481,7 +482,7 @@ pub struct CloseAgentAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,

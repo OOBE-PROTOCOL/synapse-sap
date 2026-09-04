@@ -1,4 +1,5 @@
 use crate::errors::SapError;
+use crate::seeds;
 use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
@@ -45,14 +46,14 @@ pub struct CreateAttestationAccountConstraints<'info> {
         init,
         payer = attester,
         space = AgentAttestation::DISCRIMINATOR.len() + AgentAttestation::INIT_SPACE,
-        seeds = [b"sap_attest", agent.key().as_ref(), attester.key().as_ref()],
+        seeds = [seeds::ATTEST, agent.key().as_ref(), attester.key().as_ref()],
         bump,
     )]
     pub attestation: Account<'info, AgentAttestation>,
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,
@@ -124,7 +125,7 @@ pub struct RevokeAttestationAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_attest", agent.key().as_ref(), attester.key().as_ref()],
+        seeds = [seeds::ATTEST, agent.key().as_ref(), attester.key().as_ref()],
         bump = attestation.bump,
         has_one = attester,
         has_one = agent,
@@ -165,7 +166,7 @@ pub struct CloseAttestationAccountConstraints<'info> {
     #[account(
         mut,
         close = attester,
-        seeds = [b"sap_attest", agent.key().as_ref(), attester.key().as_ref()],
+        seeds = [seeds::ATTEST, agent.key().as_ref(), attester.key().as_ref()],
         bump = attestation.bump,
         has_one = attester,
         has_one = agent,
@@ -175,7 +176,7 @@ pub struct CloseAttestationAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,

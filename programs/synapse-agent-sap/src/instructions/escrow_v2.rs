@@ -1,4 +1,5 @@
 use crate::constants::{BPS_DENOMINATOR, PROTOCOL_FEE_BPS, PROTOCOL_TREASURY};
+use crate::seeds;
 use crate::errors::SapError;
 use crate::events::*;
 use crate::state::*;
@@ -46,7 +47,7 @@ pub struct CreateEscrowV2AccountConstraints<'info> {
     /// v0.10 hardening: agent MUST have an active stake ≥ MIN_STAKE
     /// before any new escrow can be opened.
     #[account(
-        seeds = [b"sap_stake", agent.key().as_ref()],
+        seeds = [seeds::STAKE, agent.key().as_ref()],
         bump = agent_stake.bump,
         constraint = agent_stake.agent == agent.key() @ SapError::StakeAgentMismatch,
         constraint = agent_stake.staked_amount >= AgentStake::MIN_STAKE @ SapError::AgentStakeRequired,
@@ -55,13 +56,13 @@ pub struct CreateEscrowV2AccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_stats", agent.key().as_ref()],
+        seeds = [seeds::STATS, agent.key().as_ref()],
         bump = agent_stats.bump,
     )]
     pub agent_stats: Account<'info, AgentStats>,
 
     #[account(
-        seeds = [b"sap_pricing", agent.key().as_ref()],
+        seeds = [seeds::PRICING, agent.key().as_ref()],
         bump = pricing_menu.bump,
     )]
     pub pricing_menu: Account<'info, AgentPricingMenu>,
@@ -70,7 +71,7 @@ pub struct CreateEscrowV2AccountConstraints<'info> {
         init,
         payer = depositor,
         space = EscrowAccountV2::DISCRIMINATOR.len() + EscrowAccountV2::INIT_SPACE,
-        seeds = [b"sap_escrow_v2", agent.key().as_ref(), depositor.key().as_ref(), &escrow_nonce.to_le_bytes()],
+        seeds = [seeds::ESCROW_V2, agent.key().as_ref(), depositor.key().as_ref(), &escrow_nonce.to_le_bytes()],
         bump,
     )]
     pub escrow: Account<'info, EscrowAccountV2>,
@@ -306,7 +307,7 @@ pub struct DepositEscrowV2AccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_escrow_v2", escrow.agent.as_ref(), depositor.key().as_ref(), &escrow_nonce.to_le_bytes()],
+        seeds = [seeds::ESCROW_V2, escrow.agent.as_ref(), depositor.key().as_ref(), &escrow_nonce.to_le_bytes()],
         bump = escrow.bump,
         has_one = depositor,
     )]
@@ -413,14 +414,14 @@ pub struct SettleCallsV2AccountConstraints<'info> {
 
     /// CHECK: Agent PDA — seeds-verified, NOT deserialized (76× savings).
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump,
     )]
     pub agent: UncheckedAccount<'info>,
 
     #[account(
         mut,
-        seeds = [b"sap_stats", agent.key().as_ref()],
+        seeds = [seeds::STATS, agent.key().as_ref()],
         bump = agent_stats.bump,
         constraint = agent_stats.is_active @ SapError::AgentInactive,
     )]
@@ -428,7 +429,7 @@ pub struct SettleCallsV2AccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_escrow_v2", agent.key().as_ref(), escrow.depositor.as_ref(), &escrow_nonce.to_le_bytes()],
+        seeds = [seeds::ESCROW_V2, agent.key().as_ref(), escrow.depositor.as_ref(), &escrow_nonce.to_le_bytes()],
         bump = escrow.bump,
         constraint = escrow.agent == agent.key(),
     )]
@@ -647,7 +648,7 @@ pub fn settle_calls_v2_handler<'info>(
             // M2 fix: Compute PendingSettlement PDA for the event
             let (pending_pda, _) = Pubkey::find_program_address(
                 &[
-                    b"sap_pending",
+                    seeds::PENDING,
                     escrow_key.as_ref(),
                     &settlement_index.to_le_bytes(),
                 ],
@@ -697,13 +698,13 @@ pub struct CreatePendingSettlementAccountConstraints<'info> {
 
     /// CHECK: Agent PDA — seeds-verified.
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump,
     )]
     pub agent: UncheckedAccount<'info>,
 
     #[account(
-        seeds = [b"sap_escrow_v2", agent.key().as_ref(), escrow.depositor.as_ref(), &escrow.escrow_nonce.to_le_bytes()],
+        seeds = [seeds::ESCROW_V2, agent.key().as_ref(), escrow.depositor.as_ref(), &escrow.escrow_nonce.to_le_bytes()],
         bump = escrow.bump,
         constraint = escrow.agent == agent.key(),
         constraint = escrow.settlement_security == SettlementSecurity::DisputeWindow @ SapError::InvalidSettlementSecurity,
@@ -714,7 +715,7 @@ pub struct CreatePendingSettlementAccountConstraints<'info> {
         init,
         payer = wallet,
         space = PendingSettlement::DISCRIMINATOR.len() + PendingSettlement::INIT_SPACE,
-        seeds = [b"sap_pending", escrow.key().as_ref(), &settlement_index.to_le_bytes()],
+        seeds = [seeds::PENDING, escrow.key().as_ref(), &settlement_index.to_le_bytes()],
         bump,
     )]
     pub pending_settlement: Account<'info, PendingSettlement>,
@@ -752,14 +753,14 @@ pub struct FinalizeSettlementAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_escrow_v2", escrow.agent.as_ref(), escrow.depositor.as_ref(), &escrow.escrow_nonce.to_le_bytes()],
+        seeds = [seeds::ESCROW_V2, escrow.agent.as_ref(), escrow.depositor.as_ref(), &escrow.escrow_nonce.to_le_bytes()],
         bump = escrow.bump,
     )]
     pub escrow: Account<'info, EscrowAccountV2>,
 
     #[account(
         mut,
-        seeds = [b"sap_pending", escrow.key().as_ref(), &pending_settlement.settlement_index.to_le_bytes()],
+        seeds = [seeds::PENDING, escrow.key().as_ref(), &pending_settlement.settlement_index.to_le_bytes()],
         bump = pending_settlement.bump,
         constraint = pending_settlement.escrow == escrow.key(),
         constraint = !pending_settlement.is_finalized @ SapError::SettlementAlreadyFinalized,
@@ -770,7 +771,7 @@ pub struct FinalizeSettlementAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_stats", escrow.agent.as_ref()],
+        seeds = [seeds::STATS, escrow.agent.as_ref()],
         bump = agent_stats.bump,
     )]
     pub agent_stats: Account<'info, AgentStats>,
@@ -881,7 +882,7 @@ pub struct WithdrawEscrowV2AccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_escrow_v2", escrow.agent.as_ref(), depositor.key().as_ref(), &escrow.escrow_nonce.to_le_bytes()],
+        seeds = [seeds::ESCROW_V2, escrow.agent.as_ref(), depositor.key().as_ref(), &escrow.escrow_nonce.to_le_bytes()],
         bump = escrow.bump,
         has_one = depositor,
     )]
@@ -955,7 +956,7 @@ pub struct CloseEscrowV2AccountConstraints<'info> {
     #[account(
         mut,
         close = depositor,
-        seeds = [b"sap_escrow_v2", escrow.agent.as_ref(), depositor.key().as_ref(), &escrow.escrow_nonce.to_le_bytes()],
+        seeds = [seeds::ESCROW_V2, escrow.agent.as_ref(), depositor.key().as_ref(), &escrow.escrow_nonce.to_le_bytes()],
         bump = escrow.bump,
         has_one = depositor,
         constraint = escrow.balance == 0 @ SapError::EscrowNotEmpty,
@@ -966,7 +967,7 @@ pub struct CloseEscrowV2AccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_stats", escrow.agent.as_ref()],
+        seeds = [seeds::STATS, escrow.agent.as_ref()],
         bump,
     )]
     pub agent_stats: Account<'info, AgentStats>,
@@ -1071,7 +1072,7 @@ fn init_pending_settlement_from_remaining<'info>(
 
     let (_, pending_bump) = Pubkey::find_program_address(
         &[
-            b"sap_pending",
+            seeds::PENDING,
             escrow_key.as_ref(),
             &settlement_index.to_le_bytes(),
         ],
@@ -1081,7 +1082,7 @@ fn init_pending_settlement_from_remaining<'info>(
     let rent_lamports = Rent::get()?.minimum_balance(space);
     let settlement_index_bytes = settlement_index.to_le_bytes();
     let seeds: &[&[u8]] = &[
-        b"sap_pending",
+        seeds::PENDING,
         escrow_key.as_ref(),
         &settlement_index_bytes,
         &[pending_bump],
@@ -1298,7 +1299,7 @@ pub fn spl_transfer_from_escrow_v2<'info>(
     };
 
     let seeds: &[&[u8]] = &[
-        b"sap_escrow_v2",
+        seeds::ESCROW_V2,
         agent_key.as_ref(),
         depositor_key.as_ref(),
         &nonce_bytes,
@@ -1366,7 +1367,7 @@ pub fn spl_transfer_protocol_fee_from_escrow_v2<'info>(
     };
 
     let seeds: &[&[u8]] = &[
-        b"sap_escrow_v2",
+        seeds::ESCROW_V2,
         agent_key.as_ref(),
         depositor_key.as_ref(),
         &nonce_bytes,

@@ -8,6 +8,7 @@ pub mod constants;
 pub mod errors;
 pub mod events;
 pub mod instructions;
+pub mod seeds;
 pub mod state;
 pub mod validator;
 
@@ -1056,5 +1057,21 @@ pub mod synapse_agent_sap {
     /// Close empty overflow page. Reclaim rent.
     pub fn close_index_page(ctx: Context<CloseIndexPageAccountConstraints>) -> Result<()> {
         instructions::index_page::close_index_page_handler(ctx)
+    }
+
+    // ═══════════════════════════════════════════════
+    //  Rent Reclaim (SIMD rent reduction)
+    // ═══════════════════════════════════════════════
+
+    /// Reclaim excess rent from any program-owned PDA.
+    ///
+    /// After the Solana rent reduction rollout, accounts hold more lamports
+    /// than the new rent-exempt minimum. This instruction moves the excess
+    /// to a destination wallet without closing the account.
+    ///
+    /// Works for every PDA type: Agent, Stats, Stake, PricingMenu, EscrowV2,
+    /// GlobalRegistry, index pages, etc.
+    pub fn reclaim_excess_rent(ctx: Context<ReclaimExcessRent>) -> Result<()> {
+        instructions::reclaim::handle_reclaim_excess_rent(ctx)
     }
 }

@@ -1,4 +1,5 @@
 use crate::errors::SapError;
+use crate::seeds;
 use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
@@ -34,14 +35,14 @@ pub struct InitDigestAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
     pub agent: Account<'info, AgentAccount>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
@@ -56,7 +57,7 @@ pub struct InitDigestAccountConstraints<'info> {
         init,
         payer = wallet,
         space = MemoryDigest::DISCRIMINATOR.len() + MemoryDigest::INIT_SPACE,
-        seeds = [b"sap_digest", session.key().as_ref()],
+        seeds = [seeds::DIGEST, session.key().as_ref()],
         bump,
     )]
     pub digest: Account<'info, MemoryDigest>,
@@ -104,13 +105,13 @@ pub struct PostDigestAccountConstraints<'info> {
     pub session: Account<'info, SessionLedger>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -118,7 +119,7 @@ pub struct PostDigestAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_digest", session.key().as_ref()],
+        seeds = [seeds::DIGEST, session.key().as_ref()],
         bump = digest.bump,
         constraint = digest.authority == wallet.key() @ SapError::Unauthorized,
         constraint = digest.session == session.key() @ SapError::InvalidSession,
@@ -190,14 +191,14 @@ pub struct InscribeToDigestAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
     pub agent: Account<'info, AgentAccount>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
@@ -210,7 +211,7 @@ pub struct InscribeToDigestAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_digest", session.key().as_ref()],
+        seeds = [seeds::DIGEST, session.key().as_ref()],
         bump = digest.bump,
         constraint = digest.authority == wallet.key() @ SapError::Unauthorized,
         constraint = digest.session == session.key() @ SapError::InvalidSession,
@@ -288,13 +289,13 @@ pub struct UpdateDigestStorageAccountConstraints<'info> {
     pub session: Account<'info, SessionLedger>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -302,7 +303,7 @@ pub struct UpdateDigestStorageAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_digest", session.key().as_ref()],
+        seeds = [seeds::DIGEST, session.key().as_ref()],
         bump = digest.bump,
         constraint = digest.authority == wallet.key() @ SapError::Unauthorized,
         constraint = digest.session == session.key() @ SapError::InvalidSession,
@@ -349,13 +350,13 @@ pub struct CloseDigestAccountConstraints<'info> {
     pub session: Account<'info, SessionLedger>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -364,7 +365,7 @@ pub struct CloseDigestAccountConstraints<'info> {
     #[account(
         mut,
         close = wallet,
-        seeds = [b"sap_digest", session.key().as_ref()],
+        seeds = [seeds::DIGEST, session.key().as_ref()],
         bump = digest.bump,
         constraint = digest.authority == wallet.key() @ SapError::Unauthorized,
         constraint = digest.session == session.key() @ SapError::InvalidSession,

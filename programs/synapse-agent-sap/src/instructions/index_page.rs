@@ -1,4 +1,5 @@
 use crate::errors::SapError;
+use crate::seeds;
 use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
@@ -30,7 +31,7 @@ pub struct InitIndexPageAccountConstraints<'info> {
     pub authority: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global.bump,
         constraint = global.authority == authority.key() @ SapError::NotAuthority,
     )]
@@ -44,7 +45,7 @@ pub struct InitIndexPageAccountConstraints<'info> {
         init,
         payer = authority,
         space = IndexPage::DISCRIMINATOR.len() + IndexPage::INIT_SPACE,
-        seeds = [b"sap_idx_page", parent_index.key().as_ref(), &[page_index]],
+        seeds = [seeds::IDX_PAGE, parent_index.key().as_ref(), &[page_index]],
         bump,
     )]
     pub index_page: Account<'info, IndexPage>,
@@ -85,7 +86,7 @@ pub struct AddToIndexPageAccountConstraints<'info> {
     pub authority: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global.bump,
         constraint = global.authority == authority.key() @ SapError::NotAuthority,
     )]
@@ -93,7 +94,7 @@ pub struct AddToIndexPageAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_idx_page", index_page.parent_index.as_ref(), &[index_page.page_index]],
+        seeds = [seeds::IDX_PAGE, index_page.parent_index.as_ref(), &[index_page.page_index]],
         bump = index_page.bump,
         constraint = index_page.entries.len() < IndexPage::MAX_ENTRIES @ SapError::IndexPageFull,
     )]
@@ -124,7 +125,7 @@ pub struct RemoveFromIndexPageAccountConstraints<'info> {
     pub authority: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global.bump,
         constraint = global.authority == authority.key() @ SapError::NotAuthority,
     )]
@@ -132,7 +133,7 @@ pub struct RemoveFromIndexPageAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_idx_page", index_page.parent_index.as_ref(), &[index_page.page_index]],
+        seeds = [seeds::IDX_PAGE, index_page.parent_index.as_ref(), &[index_page.page_index]],
         bump = index_page.bump,
     )]
     pub index_page: Account<'info, IndexPage>,
@@ -161,7 +162,7 @@ pub struct CloseIndexPageAccountConstraints<'info> {
     pub authority: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global.bump,
         constraint = global.authority == authority.key() @ SapError::NotAuthority,
     )]
@@ -170,7 +171,7 @@ pub struct CloseIndexPageAccountConstraints<'info> {
     #[account(
         mut,
         close = authority,
-        seeds = [b"sap_idx_page", index_page.parent_index.as_ref(), &[index_page.page_index]],
+        seeds = [seeds::IDX_PAGE, index_page.parent_index.as_ref(), &[index_page.page_index]],
         bump = index_page.bump,
         constraint = index_page.entries.is_empty() @ SapError::IndexPageNotEmpty,
     )]

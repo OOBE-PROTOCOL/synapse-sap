@@ -1,4 +1,5 @@
 use crate::errors::SapError;
+use crate::seeds;
 use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
@@ -16,7 +17,7 @@ pub struct RegisterPluginAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -26,7 +27,7 @@ pub struct RegisterPluginAccountConstraints<'info> {
         init,
         payer = wallet,
         space = PluginSlot::DISCRIMINATOR.len() + PluginSlot::INIT_SPACE,
-        seeds = [b"sap_plugin", agent.key().as_ref(), &[plugin_type]],
+        seeds = [seeds::PLUGIN, agent.key().as_ref(), &[plugin_type]],
         bump,
     )]
     pub plugin_slot: Account<'info, PluginSlot>,
@@ -87,7 +88,7 @@ pub struct ClosePluginAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]

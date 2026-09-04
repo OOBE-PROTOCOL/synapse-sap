@@ -1,4 +1,5 @@
 use crate::errors::SapError;
+use crate::seeds;
 use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
@@ -42,14 +43,14 @@ pub struct InscribeReceiptBatchAccountConstraints<'info> {
 
     /// CHECK: Agent PDA — seeds-verified, NOT deserialized.
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump,
     )]
     pub agent: UncheckedAccount<'info>,
 
     #[account(
         mut,
-        seeds = [b"sap_escrow_v2", agent.key().as_ref(), escrow.depositor.as_ref(), &escrow.escrow_nonce.to_le_bytes()],
+        seeds = [seeds::ESCROW_V2, agent.key().as_ref(), escrow.depositor.as_ref(), &escrow.escrow_nonce.to_le_bytes()],
         bump = escrow.bump,
         constraint = escrow.agent == agent.key(),
     )]
@@ -59,7 +60,7 @@ pub struct InscribeReceiptBatchAccountConstraints<'info> {
         init,
         payer = wallet,
         space = ReceiptBatch::DISCRIMINATOR.len() + ReceiptBatch::INIT_SPACE,
-        seeds = [b"sap_receipt", escrow.key().as_ref(), &batch_index.to_le_bytes()],
+        seeds = [seeds::RECEIPT, escrow.key().as_ref(), &batch_index.to_le_bytes()],
         bump,
     )]
     pub receipt_batch: Account<'info, ReceiptBatch>,
@@ -136,26 +137,26 @@ pub struct SubmitReceiptProofAccountConstraints<'info> {
 
     /// CHECK: Agent PDA — seeds-verified.
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump,
     )]
     pub agent: UncheckedAccount<'info>,
 
     #[account(
-        seeds = [b"sap_escrow_v2", agent.key().as_ref(), escrow.depositor.as_ref(), &escrow.escrow_nonce.to_le_bytes()],
+        seeds = [seeds::ESCROW_V2, agent.key().as_ref(), escrow.depositor.as_ref(), &escrow.escrow_nonce.to_le_bytes()],
         bump = escrow.bump,
     )]
     pub escrow: Account<'info, EscrowAccountV2>,
 
     #[account(
-        seeds = [b"sap_receipt", escrow.key().as_ref(), &receipt_batch.batch_index.to_le_bytes()],
+        seeds = [seeds::RECEIPT, escrow.key().as_ref(), &receipt_batch.batch_index.to_le_bytes()],
         bump = receipt_batch.bump,
         constraint = receipt_batch.escrow == escrow.key(),
     )]
     pub receipt_batch: Account<'info, ReceiptBatch>,
 
     #[account(
-        seeds = [b"sap_pending", escrow.key().as_ref(), &pending_settlement.settlement_index.to_le_bytes()],
+        seeds = [seeds::PENDING, escrow.key().as_ref(), &pending_settlement.settlement_index.to_le_bytes()],
         bump = pending_settlement.bump,
         constraint = pending_settlement.escrow == escrow.key(),
         constraint = pending_settlement.is_disputed @ SapError::SettlementNotPending,
@@ -164,7 +165,7 @@ pub struct SubmitReceiptProofAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_dispute", pending_settlement.key().as_ref()],
+        seeds = [seeds::DISPUTE, pending_settlement.key().as_ref()],
         bump = dispute.bump,
         constraint = dispute.agent == agent.key(),
         constraint = dispute.outcome == DisputeOutcome::Pending @ SapError::SettlementAlreadyFinalized,
@@ -295,14 +296,14 @@ pub struct AutoResolveDisputeAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_escrow_v2", escrow.agent.as_ref(), escrow.depositor.as_ref(), &escrow.escrow_nonce.to_le_bytes()],
+        seeds = [seeds::ESCROW_V2, escrow.agent.as_ref(), escrow.depositor.as_ref(), &escrow.escrow_nonce.to_le_bytes()],
         bump = escrow.bump,
     )]
     pub escrow: Account<'info, EscrowAccountV2>,
 
     #[account(
         mut,
-        seeds = [b"sap_pending", escrow.key().as_ref(), &pending_settlement.settlement_index.to_le_bytes()],
+        seeds = [seeds::PENDING, escrow.key().as_ref(), &pending_settlement.settlement_index.to_le_bytes()],
         bump = pending_settlement.bump,
         constraint = pending_settlement.escrow == escrow.key(),
         constraint = !pending_settlement.is_finalized @ SapError::SettlementAlreadyFinalized,
@@ -311,7 +312,7 @@ pub struct AutoResolveDisputeAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_dispute", pending_settlement.key().as_ref()],
+        seeds = [seeds::DISPUTE, pending_settlement.key().as_ref()],
         bump = dispute.bump,
         constraint = dispute.outcome == DisputeOutcome::Pending @ SapError::SettlementAlreadyFinalized,
     )]
@@ -319,7 +320,7 @@ pub struct AutoResolveDisputeAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_stats", escrow.agent.as_ref()],
+        seeds = [seeds::STATS, escrow.agent.as_ref()],
         bump = agent_stats.bump,
     )]
     pub agent_stats: Account<'info, AgentStats>,
@@ -329,7 +330,7 @@ pub struct AutoResolveDisputeAccountConstraints<'info> {
     /// the caller forgets to pass it via remaining_accounts.
     #[account(
         mut,
-        seeds = [b"sap_stake", escrow.agent.as_ref()],
+        seeds = [seeds::STAKE, escrow.agent.as_ref()],
         bump = agent_stake.bump,
         constraint = agent_stake.agent == escrow.agent @ SapError::StakeAgentMismatch,
     )]
@@ -823,7 +824,7 @@ fn spl_transfer_from_escrow_to_account<'info>(
     };
 
     let seeds: &[&[u8]] = &[
-        b"sap_escrow_v2",
+        seeds::ESCROW_V2,
         agent_key.as_ref(),
         depositor_key.as_ref(),
         &nonce_bytes,

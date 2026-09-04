@@ -1,4 +1,5 @@
 use crate::errors::SapError;
+use crate::seeds;
 use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
@@ -32,14 +33,14 @@ pub struct CreateBufferAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
     pub agent: Account<'info, AgentAccount>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
@@ -55,7 +56,7 @@ pub struct CreateBufferAccountConstraints<'info> {
         payer = wallet,
         space = MemoryBuffer::HEADER_SPACE,
         seeds = [
-            b"sap_buffer",
+            seeds::BUFFER,
             session.key().as_ref(),
             &page_index.to_le_bytes(),
         ],
@@ -111,14 +112,14 @@ pub struct AppendBufferAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
     pub agent: Account<'info, AgentAccount>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
@@ -135,7 +136,7 @@ pub struct AppendBufferAccountConstraints<'info> {
         realloc::payer = wallet,
         realloc::zero = false,
         seeds = [
-            b"sap_buffer",
+            seeds::BUFFER,
             session.key().as_ref(),
             &page_index.to_le_bytes(),
         ],
@@ -207,14 +208,14 @@ pub struct CloseBufferAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
     pub agent: Account<'info, AgentAccount>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
@@ -228,7 +229,7 @@ pub struct CloseBufferAccountConstraints<'info> {
         mut,
         close = wallet,
         seeds = [
-            b"sap_buffer",
+            seeds::BUFFER,
             session.key().as_ref(),
             &page_index.to_le_bytes(),
         ],

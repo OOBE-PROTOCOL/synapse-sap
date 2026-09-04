@@ -1,4 +1,5 @@
 use crate::errors::SapError;
+use crate::seeds;
 use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
@@ -15,7 +16,7 @@ pub struct StoreMemoryAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -25,7 +26,7 @@ pub struct StoreMemoryAccountConstraints<'info> {
         init,
         payer = wallet,
         space = MemoryEntry::DISCRIMINATOR.len() + MemoryEntry::INIT_SPACE,
-        seeds = [b"sap_memory", agent.key().as_ref(), entry_hash.as_ref()],
+        seeds = [seeds::MEMORY, agent.key().as_ref(), entry_hash.as_ref()],
         bump,
     )]
     pub memory_entry: Account<'info, MemoryEntry>,
@@ -86,7 +87,7 @@ pub struct AppendMemoryChunkAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -102,7 +103,7 @@ pub struct AppendMemoryChunkAccountConstraints<'info> {
         init,
         payer = wallet,
         space = MemoryChunk::DISCRIMINATOR.len() + MemoryChunk::INIT_SPACE,
-        seeds = [b"sap_mem_chunk", memory_entry.key().as_ref(), &[chunk_index]],
+        seeds = [seeds::MEM_CHUNK, memory_entry.key().as_ref(), &[chunk_index]],
         bump,
     )]
     pub memory_chunk: Account<'info, MemoryChunk>,
@@ -150,7 +151,7 @@ pub struct CloseMemoryEntryAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -178,7 +179,7 @@ pub struct CloseMemoryChunkAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]

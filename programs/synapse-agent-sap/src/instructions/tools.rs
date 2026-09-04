@@ -1,4 +1,5 @@
 use crate::errors::SapError;
+use crate::seeds;
 use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
@@ -33,7 +34,7 @@ pub struct PublishToolAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -43,14 +44,14 @@ pub struct PublishToolAccountConstraints<'info> {
         init,
         payer = wallet,
         space = ToolDescriptor::DISCRIMINATOR.len() + ToolDescriptor::INIT_SPACE,
-        seeds = [b"sap_tool", agent.key().as_ref(), tool_name_hash.as_ref()],
+        seeds = [seeds::TOOL, agent.key().as_ref(), tool_name_hash.as_ref()],
         bump,
     )]
     pub tool: Account<'info, ToolDescriptor>,
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,
@@ -160,7 +161,7 @@ pub struct InscribeToolSchemaAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -230,7 +231,7 @@ pub struct UpdateToolAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -327,7 +328,7 @@ pub struct DeactivateToolAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -368,7 +369,7 @@ pub struct ReactivateToolAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -409,7 +410,7 @@ pub struct CloseToolAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -424,7 +425,7 @@ pub struct CloseToolAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,
@@ -464,14 +465,14 @@ pub struct CreateSessionCheckpointAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
     pub agent: Account<'info, AgentAccount>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
@@ -486,7 +487,7 @@ pub struct CreateSessionCheckpointAccountConstraints<'info> {
         init,
         payer = wallet,
         space = SessionCheckpoint::DISCRIMINATOR.len() + SessionCheckpoint::INIT_SPACE,
-        seeds = [b"sap_checkpoint", session.key().as_ref(), &checkpoint_index.to_le_bytes()],
+        seeds = [seeds::CHECKPOINT, session.key().as_ref(), &checkpoint_index.to_le_bytes()],
         bump,
     )]
     pub checkpoint: Account<'info, SessionCheckpoint>,
@@ -548,14 +549,14 @@ pub struct CloseCheckpointAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
     pub agent: Account<'info, AgentAccount>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
@@ -568,7 +569,7 @@ pub struct CloseCheckpointAccountConstraints<'info> {
     #[account(
         mut,
         close = wallet,
-        seeds = [b"sap_checkpoint", session.key().as_ref(), &checkpoint_index.to_le_bytes()],
+        seeds = [seeds::CHECKPOINT, session.key().as_ref(), &checkpoint_index.to_le_bytes()],
         bump = checkpoint.bump,
         has_one = session,
     )]

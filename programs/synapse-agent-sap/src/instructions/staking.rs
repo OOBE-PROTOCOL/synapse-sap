@@ -1,4 +1,5 @@
 use crate::errors::SapError;
+use crate::seeds;
 use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
@@ -15,7 +16,7 @@ pub struct InitStakeAccountConstraints<'info> {
 
     /// v0.11 M-2: typed agent account — stake cannot be opened for a non-existent agent.
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump,
         has_one = wallet,
     )]
@@ -24,7 +25,7 @@ pub struct InitStakeAccountConstraints<'info> {
     #[account(
         init, payer = wallet,
         space = AgentStake::DISCRIMINATOR.len() + AgentStake::INIT_SPACE,
-        seeds = [b"sap_stake", agent.key().as_ref()], bump,
+        seeds = [seeds::STAKE, agent.key().as_ref()], bump,
     )]
     pub stake: Account<'info, AgentStake>,
 
@@ -84,7 +85,7 @@ pub struct DepositStakeAccountConstraints<'info> {
 
     /// v0.11 M-2: typed agent account.
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump,
         has_one = wallet,
     )]
@@ -92,7 +93,7 @@ pub struct DepositStakeAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_stake", agent.key().as_ref()], bump = stake.bump,
+        seeds = [seeds::STAKE, agent.key().as_ref()], bump = stake.bump,
         constraint = stake.agent == agent.key(),
     )]
     pub stake: Account<'info, AgentStake>,
@@ -155,7 +156,7 @@ pub struct RequestUnstakeAccountConstraints<'info> {
 
     /// v0.11 M-2: typed agent account.
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump,
         has_one = wallet,
     )]
@@ -163,7 +164,7 @@ pub struct RequestUnstakeAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_stake", agent.key().as_ref()], bump = stake.bump,
+        seeds = [seeds::STAKE, agent.key().as_ref()], bump = stake.bump,
         constraint = stake.agent == agent.key(),
         constraint = stake.staked_amount > 0 @ SapError::NoStakeAccount,
         constraint = stake.unstake_requested_at == 0 @ SapError::UnstakeAlreadyPending,
@@ -218,7 +219,7 @@ pub struct CompleteUnstakeAccountConstraints<'info> {
 
     /// v0.11 M-2: typed agent account.
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump,
         has_one = wallet,
     )]
@@ -226,7 +227,7 @@ pub struct CompleteUnstakeAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_stake", agent.key().as_ref()], bump = stake.bump,
+        seeds = [seeds::STAKE, agent.key().as_ref()], bump = stake.bump,
         constraint = stake.agent == agent.key(),
         constraint = stake.unstake_requested_at > 0 @ SapError::NoUnstakePending,
     )]
@@ -297,7 +298,7 @@ pub struct CloseStakeAccountConstraints<'info> {
     /// CHECK: Agent PDA may already be closed. The PDA address is still
     /// seed-verified and must match the stake.account agent field.
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump,
     )]
     pub agent: UncheckedAccount<'info>,
@@ -305,7 +306,7 @@ pub struct CloseStakeAccountConstraints<'info> {
     #[account(
         mut,
         close = wallet,
-        seeds = [b"sap_stake", agent.key().as_ref()],
+        seeds = [seeds::STAKE, agent.key().as_ref()],
         bump = stake.bump,
         has_one = wallet,
         constraint = stake.agent == agent.key() @ SapError::StakeAgentMismatch,

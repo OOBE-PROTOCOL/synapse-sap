@@ -1,4 +1,5 @@
 use crate::errors::SapError;
+use crate::seeds;
 use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
@@ -36,7 +37,7 @@ pub struct InitVaultAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -46,14 +47,14 @@ pub struct InitVaultAccountConstraints<'info> {
         init,
         payer = wallet,
         space = MemoryVault::DISCRIMINATOR.len() + MemoryVault::INIT_SPACE,
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump,
     )]
     pub vault: Account<'info, MemoryVault>,
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,
@@ -110,7 +111,7 @@ pub struct OpenSessionAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -118,7 +119,7 @@ pub struct OpenSessionAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
@@ -127,7 +128,7 @@ pub struct OpenSessionAccountConstraints<'info> {
         init,
         payer = wallet,
         space = SessionLedger::DISCRIMINATOR.len() + SessionLedger::INIT_SPACE,
-        seeds = [b"sap_session", vault.key().as_ref(), session_hash.as_ref()],
+        seeds = [seeds::SESSION, vault.key().as_ref(), session_hash.as_ref()],
         bump,
     )]
     pub session: Account<'info, SessionLedger>,
@@ -200,7 +201,7 @@ pub struct InscribeMemoryAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -208,7 +209,7 @@ pub struct InscribeMemoryAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
@@ -225,7 +226,7 @@ pub struct InscribeMemoryAccountConstraints<'info> {
         init_if_needed,
         payer = wallet,
         space = EpochPage::DISCRIMINATOR.len() + EpochPage::INIT_SPACE,
-        seeds = [b"sap_epoch", session.key().as_ref(), &epoch_index.to_le_bytes()],
+        seeds = [seeds::EPOCH, session.key().as_ref(), &epoch_index.to_le_bytes()],
         bump,
     )]
     pub epoch_page: Account<'info, EpochPage>,
@@ -407,14 +408,14 @@ pub struct CloseSessionAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
     pub agent: Account<'info, AgentAccount>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
@@ -456,7 +457,7 @@ pub struct CloseVaultAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -465,7 +466,7 @@ pub struct CloseVaultAccountConstraints<'info> {
     #[account(
         mut,
         close = wallet,
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
         has_one = wallet,
     )]
@@ -473,7 +474,7 @@ pub struct CloseVaultAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,
@@ -510,14 +511,14 @@ pub struct CloseSessionPdaAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
     pub agent: Account<'info, AgentAccount>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
@@ -557,14 +558,14 @@ pub struct CloseEpochPageAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
     pub agent: Account<'info, AgentAccount>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
@@ -578,7 +579,7 @@ pub struct CloseEpochPageAccountConstraints<'info> {
     #[account(
         mut,
         close = wallet,
-        seeds = [b"sap_epoch", session.key().as_ref(), &epoch_index.to_le_bytes()],
+        seeds = [seeds::EPOCH, session.key().as_ref(), &epoch_index.to_le_bytes()],
         bump = epoch_page.bump,
         has_one = session,
     )]
@@ -615,7 +616,7 @@ pub struct RotateVaultNonceAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -623,7 +624,7 @@ pub struct RotateVaultNonceAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
         has_one = wallet,
     )]
@@ -673,14 +674,14 @@ pub struct AddVaultDelegateAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
     pub agent: Account<'info, AgentAccount>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
         has_one = wallet,
     )]
@@ -750,14 +751,14 @@ pub struct RevokeVaultDelegateAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
     pub agent: Account<'info, AgentAccount>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
@@ -805,7 +806,7 @@ pub struct InscribeMemoryDelegatedAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
@@ -830,7 +831,7 @@ pub struct InscribeMemoryDelegatedAccountConstraints<'info> {
         init_if_needed,
         payer = delegate_signer,
         space = EpochPage::DISCRIMINATOR.len() + EpochPage::INIT_SPACE,
-        seeds = [b"sap_epoch", session.key().as_ref(), &epoch_index.to_le_bytes()],
+        seeds = [seeds::EPOCH, session.key().as_ref(), &epoch_index.to_le_bytes()],
         bump,
     )]
     pub epoch_page: Account<'info, EpochPage>,
@@ -918,7 +919,7 @@ pub struct CompactInscribeAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -926,7 +927,7 @@ pub struct CompactInscribeAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,

@@ -1,4 +1,5 @@
 use crate::errors::SapError;
+use crate::seeds;
 use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
@@ -26,7 +27,7 @@ pub struct CreateSubscriptionAccountConstraints<'info> {
     #[account(
         init, payer = subscriber,
         space = Subscription::DISCRIMINATOR.len() + Subscription::INIT_SPACE,
-        seeds = [b"sap_sub", agent.key().as_ref(), subscriber.key().as_ref(), &sub_id.to_le_bytes()],
+        seeds = [seeds::SUB, agent.key().as_ref(), subscriber.key().as_ref(), &sub_id.to_le_bytes()],
         bump,
     )]
     pub subscription: Account<'info, Subscription>,
@@ -108,7 +109,7 @@ pub struct FundSubscriptionAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_sub", subscription.agent.as_ref(), subscriber.key().as_ref(), &subscription.sub_id.to_le_bytes()],
+        seeds = [seeds::SUB, subscription.agent.as_ref(), subscriber.key().as_ref(), &subscription.sub_id.to_le_bytes()],
         bump = subscription.bump,
         constraint = subscription.subscriber == subscriber.key(),
         constraint = subscription.cancelled_at == 0 @ SapError::SubscriptionCancelled,
@@ -159,7 +160,7 @@ pub struct ClaimIntervalAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_sub", subscription.agent.as_ref(), subscription.subscriber.as_ref(), &subscription.sub_id.to_le_bytes()],
+        seeds = [seeds::SUB, subscription.agent.as_ref(), subscription.subscriber.as_ref(), &subscription.sub_id.to_le_bytes()],
         bump = subscription.bump,
         constraint = subscription.cancelled_at == 0 @ SapError::SubscriptionCancelled,
     )]
@@ -258,7 +259,7 @@ pub struct CancelSubscriptionAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_sub", subscription.agent.as_ref(), subscriber.key().as_ref(), &subscription.sub_id.to_le_bytes()],
+        seeds = [seeds::SUB, subscription.agent.as_ref(), subscriber.key().as_ref(), &subscription.sub_id.to_le_bytes()],
         bump = subscription.bump,
         constraint = subscription.subscriber == subscriber.key(),
         constraint = subscription.cancelled_at == 0 @ SapError::SubscriptionCancelled,
@@ -337,7 +338,7 @@ pub struct CloseSubscriptionAccountConstraints<'info> {
     #[account(
         mut,
         close = subscriber,
-        seeds = [b"sap_sub", subscription.agent.as_ref(), subscriber.key().as_ref(), &subscription.sub_id.to_le_bytes()],
+        seeds = [seeds::SUB, subscription.agent.as_ref(), subscriber.key().as_ref(), &subscription.sub_id.to_le_bytes()],
         bump = subscription.bump,
         constraint = subscription.subscriber == subscriber.key(),
         constraint = subscription.cancelled_at > 0 @ SapError::SubscriptionAlreadyActive,

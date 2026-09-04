@@ -4,6 +4,7 @@ pub mod feedback;
 pub mod global;
 pub mod indexing;
 pub mod ledger;
+pub mod reclaim;
 pub mod tools;
 pub mod vault;
 
@@ -38,6 +39,9 @@ pub use indexing::*;
 pub use ledger::*;
 pub use tools::*;
 pub use vault::*;
+
+// ── Reclaim ─────────────────────────────────────────────────────
+pub use reclaim::*;
 
 // ── V2.1 Re-exports ────────────────────────────────────────────
 pub use dispute::*;

@@ -1,3 +1,4 @@
+use crate::seeds;
 use crate::state::GlobalRegistry;
 use anchor_lang::prelude::*;
 
@@ -12,7 +13,7 @@ pub struct InitializeGlobalAccountConstraints<'info> {
         init,
         payer = authority,
         space = GlobalRegistry::DISCRIMINATOR.len() + GlobalRegistry::INIT_SPACE,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,

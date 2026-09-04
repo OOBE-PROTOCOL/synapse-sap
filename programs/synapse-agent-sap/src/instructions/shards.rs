@@ -1,4 +1,5 @@
 use crate::errors::SapError;
+use crate::seeds;
 use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
@@ -18,7 +19,7 @@ pub struct InitShardAccountConstraints<'info> {
     pub authority: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global.bump,
         constraint = global.authority == authority.key() @ SapError::NotAuthority,
     )]
@@ -27,7 +28,7 @@ pub struct InitShardAccountConstraints<'info> {
     #[account(
         init, payer = authority,
         space = CounterShard::DISCRIMINATOR.len() + CounterShard::INIT_SPACE,
-        seeds = [b"sap_shard" as &[u8], &[shard_index]],
+        seeds = [seeds::SHARD as &[u8], &[shard_index]],
         bump,
     )]
     pub shard: Account<'info, CounterShard>,

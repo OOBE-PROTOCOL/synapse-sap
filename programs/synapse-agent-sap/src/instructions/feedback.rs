@@ -1,4 +1,5 @@
 use crate::errors::SapError;
+use crate::seeds;
 use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
@@ -17,7 +18,7 @@ pub struct GiveFeedbackAccountConstraints<'info> {
         init,
         payer = reviewer,
         space = FeedbackAccount::DISCRIMINATOR.len() + FeedbackAccount::INIT_SPACE,
-        seeds = [b"sap_feedback", agent.key().as_ref(), reviewer.key().as_ref()],
+        seeds = [seeds::FEEDBACK, agent.key().as_ref(), reviewer.key().as_ref()],
         bump,
     )]
     pub feedback: Account<'info, FeedbackAccount>,
@@ -32,7 +33,7 @@ pub struct GiveFeedbackAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,
@@ -115,7 +116,7 @@ pub struct UpdateFeedbackAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_feedback", agent.key().as_ref(), reviewer.key().as_ref()],
+        seeds = [seeds::FEEDBACK, agent.key().as_ref(), reviewer.key().as_ref()],
         bump = feedback.bump,
         has_one = reviewer,
         has_one = agent,
@@ -194,7 +195,7 @@ pub struct RevokeFeedbackAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_feedback", agent.key().as_ref(), reviewer.key().as_ref()],
+        seeds = [seeds::FEEDBACK, agent.key().as_ref(), reviewer.key().as_ref()],
         bump = feedback.bump,
         has_one = reviewer,
         has_one = agent,
@@ -255,7 +256,7 @@ pub struct CloseFeedbackAccountConstraints<'info> {
     #[account(
         mut,
         close = reviewer,
-        seeds = [b"sap_feedback", agent.key().as_ref(), reviewer.key().as_ref()],
+        seeds = [seeds::FEEDBACK, agent.key().as_ref(), reviewer.key().as_ref()],
         bump = feedback.bump,
         has_one = reviewer,
         has_one = agent,
@@ -267,7 +268,7 @@ pub struct CloseFeedbackAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,

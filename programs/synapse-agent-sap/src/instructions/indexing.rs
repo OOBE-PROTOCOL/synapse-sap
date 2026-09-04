@@ -1,4 +1,5 @@
 use crate::errors::SapError;
+use crate::seeds;
 use crate::state::*;
 use anchor_lang::prelude::*;
 use solana_sha256_hasher::hash;
@@ -18,7 +19,7 @@ pub struct InitCapabilityIndexAccountConstraints<'info> {
 
     /// Proves caller owns this agent
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -28,14 +29,14 @@ pub struct InitCapabilityIndexAccountConstraints<'info> {
         init,
         payer = wallet,
         space = CapabilityIndex::DISCRIMINATOR.len() + CapabilityIndex::INIT_SPACE,
-        seeds = [b"sap_cap_idx", capability_hash.as_ref()],
+        seeds = [seeds::CAP_IDX, capability_hash.as_ref()],
         bump,
     )]
     pub capability_index: Account<'info, CapabilityIndex>,
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,
@@ -87,7 +88,7 @@ pub struct AddToCapabilityIndexAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -95,7 +96,7 @@ pub struct AddToCapabilityIndexAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_cap_idx", capability_hash.as_ref()],
+        seeds = [seeds::CAP_IDX, capability_hash.as_ref()],
         bump = capability_index.bump,
     )]
     pub capability_index: Account<'info, CapabilityIndex>,
@@ -140,7 +141,7 @@ pub struct RemoveFromCapabilityIndexAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -148,7 +149,7 @@ pub struct RemoveFromCapabilityIndexAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_cap_idx", capability_hash.as_ref()],
+        seeds = [seeds::CAP_IDX, capability_hash.as_ref()],
         bump = capability_index.bump,
     )]
     pub capability_index: Account<'info, CapabilityIndex>,
@@ -184,7 +185,7 @@ pub struct InitProtocolIndexAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -194,14 +195,14 @@ pub struct InitProtocolIndexAccountConstraints<'info> {
         init,
         payer = wallet,
         space = ProtocolIndex::DISCRIMINATOR.len() + ProtocolIndex::INIT_SPACE,
-        seeds = [b"sap_proto_idx", protocol_hash.as_ref()],
+        seeds = [seeds::PROTO_IDX, protocol_hash.as_ref()],
         bump,
     )]
     pub protocol_index: Account<'info, ProtocolIndex>,
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,
@@ -252,7 +253,7 @@ pub struct AddToProtocolIndexAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -260,7 +261,7 @@ pub struct AddToProtocolIndexAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_proto_idx", protocol_hash.as_ref()],
+        seeds = [seeds::PROTO_IDX, protocol_hash.as_ref()],
         bump = protocol_index.bump,
     )]
     pub protocol_index: Account<'info, ProtocolIndex>,
@@ -304,7 +305,7 @@ pub struct RemoveFromProtocolIndexAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -312,7 +313,7 @@ pub struct RemoveFromProtocolIndexAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_proto_idx", protocol_hash.as_ref()],
+        seeds = [seeds::PROTO_IDX, protocol_hash.as_ref()],
         bump = protocol_index.bump,
     )]
     pub protocol_index: Account<'info, ProtocolIndex>,
@@ -349,7 +350,7 @@ pub struct CloseCapabilityIndexAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -358,7 +359,7 @@ pub struct CloseCapabilityIndexAccountConstraints<'info> {
     #[account(
         mut,
         close = wallet,
-        seeds = [b"sap_cap_idx", capability_hash.as_ref()],
+        seeds = [seeds::CAP_IDX, capability_hash.as_ref()],
         bump = capability_index.bump,
         constraint = capability_index.agents.is_empty() @ SapError::IndexNotEmpty,
     )]
@@ -366,7 +367,7 @@ pub struct CloseCapabilityIndexAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,
@@ -397,7 +398,7 @@ pub struct CloseProtocolIndexAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -406,7 +407,7 @@ pub struct CloseProtocolIndexAccountConstraints<'info> {
     #[account(
         mut,
         close = wallet,
-        seeds = [b"sap_proto_idx", protocol_hash.as_ref()],
+        seeds = [seeds::PROTO_IDX, protocol_hash.as_ref()],
         bump = protocol_index.bump,
         constraint = protocol_index.agents.is_empty() @ SapError::IndexNotEmpty,
     )]
@@ -414,7 +415,7 @@ pub struct CloseProtocolIndexAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_global"],
+        seeds = [seeds::GLOBAL],
         bump = global_registry.bump,
     )]
     pub global_registry: Account<'info, GlobalRegistry>,
@@ -473,7 +474,7 @@ pub struct InitToolCategoryIndexAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -483,7 +484,7 @@ pub struct InitToolCategoryIndexAccountConstraints<'info> {
         init,
         payer = wallet,
         space = ToolCategoryIndex::DISCRIMINATOR.len() + ToolCategoryIndex::INIT_SPACE,
-        seeds = [b"sap_tool_cat".as_ref(), &[category]],
+        seeds = [seeds::TOOL_CAT, &[category]],
         bump,
     )]
     pub tool_category_index: Account<'info, ToolCategoryIndex>,
@@ -523,7 +524,7 @@ pub struct AddToToolCategoryAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -536,7 +537,7 @@ pub struct AddToToolCategoryAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_tool_cat".as_ref(), &[category]],
+        seeds = [seeds::TOOL_CAT, &[category]],
         bump = tool_category_index.bump,
     )]
     pub tool_category_index: Account<'info, ToolCategoryIndex>,
@@ -578,7 +579,7 @@ pub struct RemoveFromToolCategoryAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -591,7 +592,7 @@ pub struct RemoveFromToolCategoryAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_tool_cat".as_ref(), &[category]],
+        seeds = [seeds::TOOL_CAT, &[category]],
         bump = tool_category_index.bump,
     )]
     pub tool_category_index: Account<'info, ToolCategoryIndex>,
@@ -628,7 +629,7 @@ pub struct CloseToolCategoryIndexAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -637,7 +638,7 @@ pub struct CloseToolCategoryIndexAccountConstraints<'info> {
     #[account(
         mut,
         close = wallet,
-        seeds = [b"sap_tool_cat".as_ref(), &[category]],
+        seeds = [seeds::TOOL_CAT, &[category]],
         bump = tool_category_index.bump,
         constraint = tool_category_index.tools.is_empty() @ SapError::IndexNotEmpty,
     )]

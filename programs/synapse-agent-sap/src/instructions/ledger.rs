@@ -1,4 +1,5 @@
 use crate::errors::SapError;
+use crate::seeds;
 use crate::events::*;
 use crate::state::*;
 use anchor_lang::prelude::*;
@@ -47,14 +48,14 @@ pub struct InitLedgerAccountConstraints<'info> {
     pub wallet: Signer<'info>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
     pub agent: Account<'info, AgentAccount>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
@@ -69,7 +70,7 @@ pub struct InitLedgerAccountConstraints<'info> {
         init,
         payer = wallet,
         space = MemoryLedger::DISCRIMINATOR.len() + MemoryLedger::INIT_SPACE,
-        seeds = [b"sap_ledger", session.key().as_ref()],
+        seeds = [seeds::LEDGER, session.key().as_ref()],
         bump,
     )]
     pub ledger: Account<'info, MemoryLedger>,
@@ -119,13 +120,13 @@ pub struct WriteLedgerAccountConstraints<'info> {
     pub session: Account<'info, SessionLedger>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -133,7 +134,7 @@ pub struct WriteLedgerAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_ledger", session.key().as_ref()],
+        seeds = [seeds::LEDGER, session.key().as_ref()],
         bump = ledger.bump,
         constraint = ledger.authority == wallet.key() @ SapError::Unauthorized,
         constraint = ledger.session == session.key() @ SapError::InvalidSession,
@@ -236,13 +237,13 @@ pub struct CloseLedgerAccountConstraints<'info> {
     pub session: Account<'info, SessionLedger>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -251,7 +252,7 @@ pub struct CloseLedgerAccountConstraints<'info> {
     #[account(
         mut,
         close = wallet,
-        seeds = [b"sap_ledger", session.key().as_ref()],
+        seeds = [seeds::LEDGER, session.key().as_ref()],
         bump = ledger.bump,
         constraint = ledger.authority == wallet.key() @ SapError::Unauthorized,
         constraint = ledger.session == session.key() @ SapError::InvalidSession,
@@ -289,13 +290,13 @@ pub struct SealLedgerAccountConstraints<'info> {
     pub session: Account<'info, SessionLedger>,
 
     #[account(
-        seeds = [b"sap_vault", agent.key().as_ref()],
+        seeds = [seeds::VAULT, agent.key().as_ref()],
         bump = vault.bump,
     )]
     pub vault: Account<'info, MemoryVault>,
 
     #[account(
-        seeds = [b"sap_agent", wallet.key().as_ref()],
+        seeds = [seeds::AGENT, wallet.key().as_ref()],
         bump = agent.bump,
         has_one = wallet,
     )]
@@ -303,7 +304,7 @@ pub struct SealLedgerAccountConstraints<'info> {
 
     #[account(
         mut,
-        seeds = [b"sap_ledger", session.key().as_ref()],
+        seeds = [seeds::LEDGER, session.key().as_ref()],
         bump = ledger.bump,
         constraint = ledger.authority == wallet.key() @ SapError::Unauthorized,
         constraint = ledger.session == session.key() @ SapError::InvalidSession,
@@ -314,7 +315,7 @@ pub struct SealLedgerAccountConstraints<'info> {
         init,
         payer = wallet,
         space = LedgerPage::DISCRIMINATOR.len() + LedgerPage::INIT_SPACE,
-        seeds = [b"sap_page", ledger.key().as_ref(), &ledger.num_pages.to_le_bytes()],
+        seeds = [seeds::PAGE, ledger.key().as_ref(), &ledger.num_pages.to_le_bytes()],
         bump,
     )]
     pub page: Account<'info, LedgerPage>,
