@@ -1,21 +1,25 @@
 //! Reclaim excess rent from program-owned PDA accounts.
 //!
-//! Following the Solana rent reduction rollout (SIMD), accounts created
+//! Following the Solana rent reduction rollout (SIMD-0437), accounts created
 //! before the reduction hold more lamports than the new rent-exempt minimum.
-//! This instruction lets the agent owner (or admin authority) reclaim the
-//! excess lamports from any PDA owned by this program, without closing the
-//! account.
+//! This instruction lets the program authority reclaim the excess lamports
+//! from any PDA owned by this program, without closing the account.
 //!
 //! Security model:
 //! - `target` must be owned by this program (runtime enforces).
-//! - `authority` must be a signer and must be the agent wallet recorded
-//!   on the account, OR the program upgrade authority for admin reclaim.
+//! - `authority` must be a signer and must match `GlobalRegistry.authority`
+//!   (the program deployer / upgrade authority). Only the protocol admin
+//!   can reclaim excess rent.
+//! - `destination` is where the excess lamports land — typically the
+//!   authority's own wallet.
 //! - The Rent sysvar is read at execution time, so the instruction is
 //!   automatically correct across every phase of the rent reduction rollout.
 //! - Only the excess above the rent-exempt floor is moved; the account
 //!   stays alive and functional.
 
 use crate::errors::SapError;
+use crate::seeds;
+use crate::state::GlobalRegistry;
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::rent::Rent;
 
@@ -26,9 +30,8 @@ use anchor_lang::solana_program::rent::Rent;
 /// This makes the instruction work for every PDA type (Agent, Stats, Stake,
 /// PricingMenu, EscrowV2, etc.) without per-type variants.
 ///
-/// `authority` is the signer authorizing the reclaim. For agent-owned PDAs
-/// this is the agent's wallet. For protocol-level PDAs (GlobalRegistry,
-/// index pages, etc.) this is the program authority.
+/// `authority` must be the program authority recorded in `GlobalRegistry`.
+/// Only the protocol admin (deployer / upgrade authority) can reclaim.
 ///
 /// `destination` is where the excess lamports land — typically the same
 /// wallet as `authority`.
@@ -42,8 +45,7 @@ pub struct ReclaimExcessRent<'info> {
     /// otherwise the lamport mutation will fail.
     pub target: UncheckedAccount<'info>,
 
-    /// Signer authorizing the reclaim.
-    /// Must sign to prove ownership / authority.
+    /// Signer authorizing the reclaim. Must be `GlobalRegistry.authority`.
     #[account(mut)]
     pub authority: Signer<'info>,
 
@@ -52,6 +54,13 @@ pub struct ReclaimExcessRent<'info> {
     #[account(mut)]
     pub destination: SystemAccount<'info>,
 
+    /// Global registry — used to verify that `authority` is the program admin.
+    #[account(
+        seeds = [seeds::GLOBAL],
+        bump = global_registry.bump,
+    )]
+    pub global_registry: Account<'info, GlobalRegistry>,
+
     /// Rent sysvar — read at execution time for the current lamports_per_byte.
     pub rent: Sysvar<'info, Rent>,
 }
@@ -59,17 +68,21 @@ pub struct ReclaimExcessRent<'info> {
 /// Handler for `reclaim_excess_rent`.
 ///
 /// Logic mirrors the Token Program's `WithdrawExcessLamports`:
-/// 1. Compute the rent-exempt floor at the current rate.
-/// 2. Move only the excess (balance - floor) to destination.
-/// 3. The account stays alive with exactly the rent-exempt minimum.
-///
-/// Authority check: the caller must verify that `authority` is permitted
-/// to reclaim from `target`. For agent PDAs, the agent's wallet is the
-/// authority. For protocol PDAs, the program authority is used.
+/// 1. Verify that `authority` is the program authority (GlobalRegistry.authority).
+/// 2. Compute the rent-exempt floor at the current rate.
+/// 3. Move only the excess (balance - floor) to destination.
+/// 4. The account stays alive with exactly the rent-exempt minimum.
 ///
 /// The runtime guarantees that `target` is owned by this program —
 /// otherwise the lamport mutation would fail.
 pub fn handle_reclaim_excess_rent(ctx: Context<ReclaimExcessRent>) -> Result<()> {
+    // ── Authority check: only the program authority can reclaim. ──
+    require_keys_eq!(
+        ctx.accounts.authority.key(),
+        ctx.accounts.global_registry.authority,
+        SapError::NotAuthority
+    );
+
     let target = &ctx.accounts.target;
     let destination = &ctx.accounts.destination;
     let rent = &ctx.accounts.rent;
@@ -85,6 +98,10 @@ pub fn handle_reclaim_excess_rent(ctx: Context<ReclaimExcessRent>) -> Result<()>
 
     if excess == 0 {
         // Nothing to reclaim — the account is already at the floor.
+        msg!(
+            "reclaim_excess_rent: {} has no excess lamports",
+            target.key()
+        );
         return Ok(());
     }
 

@@ -2,7 +2,7 @@
   "address": "SAPpUhsWLJG1FfkGRcXagEDMrMsWGjbky7AyhGpFETZ",
   "metadata": {
     "name": "synapse_agent_sap",
-    "version": "1.0.3",
+    "version": "1.1.0",
     "spec": "0.1.0",
     "description": "Created with Anchor"
   },
@@ -6078,6 +6078,90 @@
         {
           "name": "tool",
           "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "reclaim_excess_rent",
+      "docs": [
+        "Reclaim excess rent from any program-owned PDA.",
+        "",
+        "After the Solana rent reduction rollout, accounts hold more lamports",
+        "than the new rent-exempt minimum. This instruction moves the excess",
+        "to a destination wallet without closing the account.",
+        "",
+        "Works for every PDA type: Agent, Stats, Stake, PricingMenu, EscrowV2,",
+        "GlobalRegistry, index pages, etc."
+      ],
+      "discriminator": [
+        2,
+        4,
+        127,
+        241,
+        229,
+        90,
+        173,
+        57
+      ],
+      "accounts": [
+        {
+          "name": "target",
+          "docs": [
+            "The PDA to reclaim from. Must be owned by this program.",
+            "Writable because we debit lamports.",
+            "The runtime enforces that this account is owned by the current program,",
+            "otherwise the lamport mutation will fail."
+          ],
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "Signer authorizing the reclaim. Must be `GlobalRegistry.authority`."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "destination",
+          "docs": [
+            "Where the excess lamports land.",
+            "Writable because we credit lamports."
+          ],
+          "writable": true
+        },
+        {
+          "name": "global_registry",
+          "docs": [
+            "Global registry — used to verify that `authority` is the program admin."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  97,
+                  112,
+                  95,
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rent",
+          "docs": [
+            "Rent sysvar — read at execution time for the current lamports_per_byte."
+          ],
+          "address": "SysvarRent111111111111111111111111111111111"
         }
       ],
       "args": []
