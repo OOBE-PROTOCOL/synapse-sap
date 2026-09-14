@@ -222,7 +222,7 @@ async function main() {
     "registerTreasuryDelta",
     treasuryAfterRegister - treasuryBeforeRegister
   );
-  if (treasuryAfterRegister - treasuryBeforeRegister !== 100_000_000) {
+  if (treasuryAfterRegister - treasuryBeforeRegister !== 40_000_000) {
     throw new Error("registration fee did not reach treasury");
   }
 
