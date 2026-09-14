@@ -1366,7 +1366,7 @@ dependencies = [
 
 [[package]]
 name = "synapse-agent-sap"
-version = "1.0.3"
+version = "1.1.0"
 dependencies = [
  "anchor-lang",
  "solana-instructions-sysvar",
